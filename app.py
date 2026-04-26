@@ -17,7 +17,41 @@ st.set_page_config(
     page_icon="🎣",
     layout="centered"
 )
+# ── Login ─────────────────────────────────────────────────────────
+USUARIOS = {
+    "randy":    "Luciano1",
+    "maik":     "Luciano2",
+    "samantha": "Luciano3",
+    "usuario4": "Luciano4",
+}
 
+if "autenticado" not in st.session_state:
+    st.session_state["autenticado"] = False
+if "usuario_actual" not in st.session_state:
+    st.session_state["usuario_actual"] = ""
+
+if not st.session_state["autenticado"]:
+    st.title("🎣 PredictaMAR")
+    st.caption("Sistema de prediccion de zonas de pesca artesanal")
+    st.divider()
+    st.subheader("Iniciar sesion")
+    usuario = st.text_input("Usuario")
+    clave   = st.text_input("Contrasena", type="password")
+    entrar  = st.button("Entrar", use_container_width=True, type="primary")
+    if entrar:
+        if usuario in USUARIOS and USUARIOS[usuario] == clave:
+            st.session_state["autenticado"]    = True
+            st.session_state["usuario_actual"] = usuario
+            st.rerun()
+        else:
+            st.error("Usuario o contrasena incorrectos.")
+    st.stop()
+
+st.sidebar.caption("Usuario: " + st.session_state["usuario_actual"])
+if st.sidebar.button("Cerrar sesion"):
+    st.session_state["autenticado"]    = False
+    st.session_state["usuario_actual"] = ""
+    st.rerun()
 # ── Credenciales Google Drive ─────────────────────────────────────
 @st.cache_resource
 def conectar_drive():
