@@ -1,2 +1,9 @@
-# predictamar-app
-PredictaMAR - Sistema de prediccion de zonas de pesca artesanal
+streamlit
+pandas
+numpy
+gspread
+google-auth
+openpyxl
+ephem
+Pillow
+matplotlib
