@@ -7,3 +7,4 @@ openpyxl
 ephem
 Pillow
 matplotlib
+scipy
