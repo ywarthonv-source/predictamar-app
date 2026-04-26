@@ -47,7 +47,9 @@ def cargar_cerebro():
         return features, species_rules
 
     except Exception as e:
-        st.error("Error cargando cerebro: " + str(e))
+        st.error("Error cargando cerebro: " + repr(e))
+        import traceback
+        st.code(traceback.format_exc())
         return None, None
 
 # ── Fase lunar ────────────────────────────────────────────────────
