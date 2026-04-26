@@ -21,12 +21,13 @@ st.set_page_config(
 # ── Credenciales Google Drive ─────────────────────────────────────
 @st.cache_resource
 def conectar_drive():
-    creds_dict = json.loads(st.secrets["GOOGLE_CREDENTIALS"])
+    creds_info = dict(st.secrets["GOOGLE_CREDENTIALS"])
+    creds_info["private_key"] = creds_info["private_key"].replace("\\n", "\n")
     scopes = [
         "https://www.googleapis.com/auth/spreadsheets",
         "https://www.googleapis.com/auth/drive"
     ]
-    creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
+    creds = Credentials.from_service_account_info(creds_info, scopes=scopes)
     return gspread.authorize(creds)
 
 # ── Cargar cerebro desde Drive ────────────────────────────────────
@@ -34,14 +35,17 @@ def conectar_drive():
 def cargar_cerebro():
     try:
         gc = conectar_drive()
-        # Buscar archivo cerebro_7d.xlsx en Drive
-        files = gc.list_permissions  # placeholder
-        # Leer desde URL publica o ID del archivo
         file_id = st.secrets["CEREBRO_FILE_ID"]
-        url = f"https://drive.google.com/uc?id={file_id}&export=download"
-        features = pd.read_excel(url, sheet_name="FEATURES_7D")
-        species_rules = pd.read_excel(url, sheet_name="SPECIES_RULES")
+        gfile = gc.open_by_key(file_id)
+
+        ws_feat = gfile.worksheet("FEATURES_7D")
+        ws_rules = gfile.worksheet("SPECIES_RULES")
+
+        features = pd.DataFrame(ws_feat.get_all_records())
+        species_rules = pd.DataFrame(ws_rules.get_all_records())
+
         return features, species_rules
+
     except Exception as e:
         st.error("Error cargando cerebro: " + str(e))
         return None, None
