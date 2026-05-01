@@ -22,7 +22,10 @@ USUARIOS = {
     "randy":    "Luciano1",
     "maik":     "Luciano2",
     "samantha": "Luciano3",
-    "usuario4": "Luciano4",
+    "Chorrillos1: "Christian", 
+    "pescador1": "MarPeru1",
+    "pescador2": "MarPeru2",
+    "pescador3": "MarPeru3",
 }
 
 if "autenticado" not in st.session_state:
