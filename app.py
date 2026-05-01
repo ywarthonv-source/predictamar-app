@@ -22,7 +22,7 @@ USUARIOS = {
     "randy":    "Luciano1",
     "maik":     "Luciano2",
     "samantha": "Luciano3",
-    "Chorrillos1: "Christian", 
+    "Chorrillos1: "Christian1", 
     "pescador1": "MarPeru1",
     "pescador2": "MarPeru2",
     "pescador3": "MarPeru3",
