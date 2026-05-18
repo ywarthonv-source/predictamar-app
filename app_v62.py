@@ -103,16 +103,25 @@ COLORES_SEMAFORO = {
     "ROJO":     ("#B71C1C", "#FFEBEE"),
 }
 
+HORAS_SALIDA = {
+    "Ahora mismo (0-2 horas)":       1,
+    "Esta tarde (2-6 horas)":        4,
+    "Esta noche (6-12 horas)":       9,
+    "Manana temprano (12-24 horas)": 18,
+    "Manana tarde (24-36 horas)":    30,
+}
+
 # ── Funciones ─────────────────────────────────────────────────────
 def calcular_coordenada_llegada(lat_base, lon_base,
-                                 dlat_h, dlon_h, dist_zona_km):
-    dist_nm = dist_zona_km / 1.852
-    t_viaje = dist_nm / VELOCIDAD_PROMEDIO
-    t_total = LATENCIA_S3_H + t_viaje
-    lat_f   = lat_base + dlat_h * t_total
-    lon_f   = lon_base + dlon_h * t_total
-    desp_km = round(np.sqrt((dlat_h*t_total*111)**2 +
-                             (dlon_h*t_total*111)**2), 1)
+                                 dlat_h, dlon_h,
+                                 dist_zona_km, horas_salida):
+    dist_nm  = dist_zona_km / 1.852
+    t_viaje  = dist_nm / VELOCIDAD_PROMEDIO
+    t_total  = LATENCIA_S3_H + horas_salida + t_viaje
+    lat_f    = lat_base + dlat_h * t_total
+    lon_f    = lon_base + dlon_h * t_total
+    desp_km  = round(np.sqrt((dlat_h*t_total*111)**2 +
+                              (dlon_h*t_total*111)**2), 1)
     return round(lat_f, 2), round(lon_f, 2), round(t_total, 1), desp_km
 
 def direccion_cardinal(dlat, dlon):
@@ -163,60 +172,74 @@ def decision_emoji(decision):
 def generar_tarjeta(score, semaforo, idx,
                     lat_base, lon_base, lat_ch, lon_ch,
                     desp_total, dir_txt, dist, t_tot,
-                    sst, chl, conf, ctx_bio, decision, fecha, radio_km):
+                    sst, chl, conf, ctx_bio, decision,
+                    fecha, radio_km, hora_salida_txt):
 
     ch, cb   = COLORES_SEMAFORO.get(semaforo, ("#555", "#fff"))
     indice   = score_a_indice(score)
     ic_color = "#1B5E20" if indice >= 70 else \
                "#E65100" if indice >= 55 else "#B71C1C"
 
-    fig, ax = plt.subplots(figsize=(5, 10.5))
+    fig, ax = plt.subplots(figsize=(5, 11))
     ax.set_xlim(0, 10)
-    ax.set_ylim(0, 21)
+    ax.set_ylim(0, 22)
     ax.axis("off")
     fig.patch.set_facecolor(cb)
     ax.set_facecolor(cb)
 
-    ax.add_patch(FancyBboxPatch((0, 19.5), 10, 1.5,
+    # Header
+    ax.add_patch(FancyBboxPatch((0, 20.5), 10, 1.5,
                   boxstyle="round,pad=0.1", facecolor=ch, edgecolor="none"))
-    ax.text(5, 20.3, "PREDICTAMAR   v6.2",
+    ax.text(5, 21.3, "PREDICTAMAR   v6.2",
             ha="center", va="center", fontsize=13,
             fontweight="bold", color="white", fontfamily="monospace")
-    ax.text(5, 19.75, f"Puerto Chorrillos   {fecha}",
+    ax.text(5, 20.75, f"Puerto Chorrillos   {fecha}",
             ha="center", va="center", fontsize=8, color="white")
 
-    ax.add_patch(plt.Circle((5, 18.5), 0.65, color=ch, zorder=3))
-    ax.text(5, 18.5, str(idx+1),
+    # Numero
+    ax.add_patch(plt.Circle((5, 19.5), 0.65, color=ch, zorder=3))
+    ax.text(5, 19.5, str(idx+1),
             ha="center", va="center", fontsize=16,
             fontweight="bold", color="white", zorder=4)
 
-    ax.text(5, 17.5, f"Indice operativo: {indice}%",
+    # Indice
+    ax.text(5, 18.5, f"Indice operativo: {indice}%",
             ha="center", va="center", fontsize=14,
             fontweight="bold", color=ic_color)
-    ax.text(5, 17.0, f"{semaforo}   Radio: {radio_km} km",
+    ax.text(5, 18.0, f"{semaforo}   Radio: {radio_km} km",
             ha="center", va="center", fontsize=9, color=ch)
 
-    ax.plot([0.5, 9.5], [16.6, 16.6], color=ch, linewidth=1.5, alpha=0.4)
+    ax.plot([0.5, 9.5], [17.6, 17.6], color=ch, linewidth=1.5, alpha=0.4)
 
-    ax.text(0.6, 16.2, "Posicion satelital ahora:",
+    # Hora salida
+    ax.text(0.6, 17.2, f"Salida: {hora_salida_txt}",
+            fontsize=8, va="center", color="#0D47A1", fontstyle="italic")
+
+    ax.plot([0.5, 9.5], [16.9, 16.9], color=ch, linewidth=0.5, alpha=0.3)
+
+    # Posicion ahora
+    ax.text(0.6, 16.5, "Posicion satelital ahora:",
             fontsize=8, va="center", color="#555555")
-    ax.text(0.6, 15.8, f"{abs(lat_base):.2f}S / {abs(lon_base):.2f}W",
+    ax.text(0.6, 16.1, f"{abs(lat_base):.2f}S / {abs(lon_base):.2f}W",
             fontsize=10, va="center", color="#212121", fontweight="bold")
 
-    ax.text(0.6, 15.2, f"Donde ir   llegada aprox. {t_tot:.0f}h:",
+    # Donde ir
+    ax.text(0.6, 15.5, f"Donde ir cuando llegues ({t_tot:.0f}h desde foto):",
             fontsize=8, va="center", color="#1B5E20")
-    ax.text(0.6, 14.8, f"{abs(lat_ch):.2f}S / {abs(lon_ch):.2f}W",
+    ax.text(0.6, 15.1, f"{abs(lat_ch):.2f}S / {abs(lon_ch):.2f}W",
             fontsize=11, va="center", color="#1B5E20", fontweight="bold")
 
-    ax.text(0.6, 14.2,
+    # Desplazamiento
+    ax.text(0.6, 14.5,
             f"Agua se desplazo {desp_total:.1f} km hacia el {dir_txt}",
             fontsize=8, va="center", color="#0D47A1")
-    ax.text(0.6, 13.7,
+    ax.text(0.6, 14.0,
             f"Distancia desde Chorrillos: {dist:.1f} km",
             fontsize=8, va="center", color="#555555")
 
-    ax.plot([0.5, 9.5], [13.3, 13.3], color=ch, linewidth=1, alpha=0.3)
+    ax.plot([0.5, 9.5], [13.6, 13.6], color=ch, linewidth=1, alpha=0.3)
 
+    # Variables
     vars_ = [
         ("Temp. superficial", f"{safe_float(sst):.1f} C"),
         ("Clorofila-a",       f"{safe_float(chl):.2f} mg/m3"),
@@ -224,7 +247,7 @@ def generar_tarjeta(score, semaforo, idx,
         ("Confianza operac.", conf),
     ]
 
-    y = 12.9
+    y = 13.2
     for lb, vl in vars_:
         ax.text(0.6, y, lb, fontsize=8, va="center", color="#555555")
         ax.text(9.5, y, vl, fontsize=9, va="center",
@@ -242,6 +265,7 @@ def generar_tarjeta(score, semaforo, idx,
 
     ax.plot([0.5, 9.5], [y-0.95, y-0.95], color=ch, linewidth=1, alpha=0.3)
 
+    # Decision
     dec_color = "#1B5E20" if "RECOMENDADA" in decision else \
                 "#E65100" if "EXPLORATORIA" in decision else "#B71C1C"
     ax.add_patch(FancyBboxPatch((0.3, y-1.85), 9.4, 0.75,
@@ -252,6 +276,7 @@ def generar_tarjeta(score, semaforo, idx,
             ha="center", va="center", fontsize=10,
             fontweight="bold", color=dec_color)
 
+    # Footer
     ax.text(5, 0.4, "PredictaMAR   Corriente de Humboldt   Peru",
             ha="center", fontsize=6.5, color="#888888", style="italic")
     ax.text(5, 0.1, "Indice operativo   no es probabilidad estadistica",
@@ -291,6 +316,16 @@ radio_km = st.slider(
     step=5
 )
 
+# Selector hora salida
+st.markdown("**⏰ Cuando piensas salir?**")
+hora_salida_sel = st.radio(
+    "",
+    list(HORAS_SALIDA.keys()),
+    index=3,
+    horizontal=False
+)
+horas_hasta_salida = HORAS_SALIDA[hora_salida_sel]
+
 st.divider()
 
 # Filtrar por radio
@@ -325,7 +360,8 @@ st.markdown(
     <span style="font-size:0.9em; color:#555;">
     Radio: {radio_km} km ·
     Indice max: {indice_zona}% ·
-    Confianza: {conf_zona}
+    Confianza: {conf_zona} ·
+    Salida: {hora_salida_sel.split("(")[0].strip()}
     </span></div>""",
     unsafe_allow_html=True
 )
@@ -352,7 +388,7 @@ for i, (_, punto) in enumerate(
     dlon_h   = safe_float(punto.get("dlon_por_hora", -0.0004))
 
     lat_ch, lon_ch, t_tot, desp_total = calcular_coordenada_llegada(
-        lat_base, lon_base, dlat_h, dlon_h, dist
+        lat_base, lon_base, dlat_h, dlon_h, dist, horas_hasta_salida
     )
     dir_txt  = direccion_cardinal(dlat_h, dlon_h)
     conf     = confianza_operacional(score, viirs_ok, era5_ok)
@@ -372,13 +408,14 @@ for i, (_, punto) in enumerate(
             st.markdown("**📍 Posicion satelital ahora**")
             st.code(f"{abs(lat_base):.2f}S / {abs(lon_base):.2f}W")
         with c2:
-            st.markdown(f"**🎯 Donde ir — llegada ~{t_tot:.0f}h**")
+            st.markdown(f"**🎯 Donde ir cuando salgas**")
             st.code(f"{abs(lat_ch):.2f}S / {abs(lon_ch):.2f}W")
 
         st.info(
-            f"🌊 El agua se desplazara **{desp_total:.1f} km hacia el {dir_txt}** "
-            f"desde la foto satelital hasta tu llegada\n\n"
-            f"📏 Distancia desde Chorrillos: **{dist:.1f} km**"
+            f"🌊 El agua estara **{desp_total:.1f} km hacia el {dir_txt}** "
+            f"de donde la vio el satelite\n\n"
+            f"📏 Distancia desde Chorrillos: **{dist:.1f} km** · "
+            f"Salida: **{hora_salida_sel.split('(')[0].strip()}**"
         )
 
         m1, m2, m3, m4 = st.columns(4)
@@ -404,7 +441,8 @@ for i, (_, punto) in enumerate(
             score, semaforo, i,
             lat_base, lon_base, lat_ch, lon_ch,
             desp_total, dir_txt, dist, t_tot,
-            sst, chl, conf, ctx_bio, decision, fecha, radio_km
+            sst, chl, conf, ctx_bio, decision,
+            fecha, radio_km, hora_salida_sel.split("(")[0].strip()
         )
         st.image(buf, use_column_width=True)
         buf.seek(0)
