@@ -19,12 +19,16 @@ st.set_page_config(
     layout="centered"
 )
 
-# ── Utilidad ──────────────────────────────────────────────────────
+# ── Utilidades ────────────────────────────────────────────────────
 def safe_float(val, default=0.0):
     try:
         return float(val)
     except:
         return default
+
+def score_a_indice(score):
+    base = 30 + safe_float(score) * 50
+    return int(np.clip(base, 30, 95))
 
 # ── Login ─────────────────────────────────────────────────────────
 USUARIOS = {
@@ -91,10 +95,8 @@ def cargar_reporte():
         return None
 
 # ── Constantes ────────────────────────────────────────────────────
-LAT_CHORRILLOS = -12.15
-LON_CHORRILLOS = -77.02
-LATENCIA_S3_H  = 24.0
-VELOCIDAD_PROMEDIO = 10.0  # nudos promedio artesanal
+LATENCIA_S3_H      = 24.0
+VELOCIDAD_PROMEDIO = 10.0
 
 COLORES_SEMAFORO = {
     "VERDE":    ("#1B5E20", "#E8F5E9"),
@@ -132,25 +134,31 @@ def contexto_biologico(sst, chl):
         sst = float(sst)
         chl = float(chl)
     except:
-        return "pelágicos costeros"
+        return "pelagicos costeros"
     if sst <= 19 and chl >= 2.0:
-        return "pelágicos costeros fríos (bonito, jurel, caballa)"
+        return "pelagicos costeros frios (bonito, jurel, caballa)"
     elif sst <= 22 and chl >= 1.0:
-        return "pelágicos costeros (jurel, caballa, perico)"
+        return "pelagicos costeros (jurel, caballa, perico)"
     elif sst > 22:
-        return "pelágicos de aguas cálidas (perico, caballa)"
+        return "pelagicos de aguas calidas (perico, caballa)"
     else:
-        return "pelágicos costeros"
+        return "pelagicos costeros"
 
 def decision_salida(semaforo, confianza):
     if semaforo == "VERDE" and confianza == "ALTA":
-        return "✅ SALIDA RECOMENDADA"
+        return "SALIDA RECOMENDADA"
     elif semaforo == "VERDE" or (semaforo == "AMARILLO" and confianza != "BAJA"):
-        return "⚡ SALIDA EXPLORATORIA"
+        return "SALIDA EXPLORATORIA"
     elif semaforo == "AMARILLO" and confianza == "BAJA":
-        return "⚠️ SALIDA CON PRECAUCION"
+        return "SALIDA CON PRECAUCION"
     else:
-        return "🚫 NO SALIR HOY"
+        return "NO SALIR HOY"
+
+def decision_emoji(decision):
+    if "RECOMENDADA"  in decision: return "✅"
+    if "EXPLORATORIA" in decision: return "⚡"
+    if "PRECAUCION"   in decision: return "⚠️"
+    return "🚫"
 
 # ── Generar tarjeta ───────────────────────────────────────────────
 def generar_tarjeta(score, semaforo, idx,
@@ -158,59 +166,65 @@ def generar_tarjeta(score, semaforo, idx,
                     desp_total, dir_txt, dist, t_tot,
                     sst, chl, conf, ctx_bio, decision, fecha, radio_km):
 
-    ch, cb = COLORES_SEMAFORO.get(semaforo, ("#555", "#fff"))
+    ch, cb  = COLORES_SEMAFORO.get(semaforo, ("#555", "#fff"))
+    indice  = score_a_indice(score)
+    ic_color = "#1B5E20" if indice >= 70 else \
+               "#E65100" if indice >= 55 else "#B71C1C"
 
-    fig, ax = plt.subplots(figsize=(5, 10))
+    fig, ax = plt.subplots(figsize=(5, 10.5))
     ax.set_xlim(0, 10)
-    ax.set_ylim(0, 20)
+    ax.set_ylim(0, 21)
     ax.axis("off")
     fig.patch.set_facecolor(cb)
     ax.set_facecolor(cb)
 
     # Header
-    ax.add_patch(FancyBboxPatch((0, 18.5), 10, 1.5,
+    ax.add_patch(FancyBboxPatch((0, 19.5), 10, 1.5,
                   boxstyle="round,pad=0.1", facecolor=ch, edgecolor="none"))
-    ax.text(5, 19.3, "PREDICTAMAR    v6.2",
+    ax.text(5, 20.3, "PREDICTAMAR   v6.2",
             ha="center", va="center", fontsize=13,
             fontweight="bold", color="white", fontfamily="monospace")
-    ax.text(5, 18.75, f"Puerto Chorrillos  {fecha}",
+    ax.text(5, 19.75, f"Puerto Chorrillos   {fecha}",
             ha="center", va="center", fontsize=8, color="white")
 
     # Numero
-    ax.add_patch(plt.Circle((5, 17.5), 0.6, color=ch, zorder=3))
-    ax.text(5, 17.5, str(idx+1),
+    ax.add_patch(plt.Circle((5, 18.5), 0.65, color=ch, zorder=3))
+    ax.text(5, 18.5, str(idx+1),
             ha="center", va="center", fontsize=16,
             fontweight="bold", color="white", zorder=4)
-    ax.text(5, 16.7, f"Radio: {radio_km} km desde Chorrillos",
-            ha="center", va="center", fontsize=9,
-            fontweight="bold", color=ch)
-    ax.text(5, 16.2, f"{semaforo}  Score: {score:.2f}",
+
+    # Indice operativo
+    ax.text(5, 17.5, f"Indice operativo: {indice}%",
+            ha="center", va="center", fontsize=14,
+            fontweight="bold", color=ic_color)
+    ax.text(5, 17.0, f"{semaforo}   Radio: {radio_km} km",
             ha="center", va="center", fontsize=9, color=ch)
 
-    ax.plot([0.5, 9.5], [15.8, 15.8], color=ch, linewidth=1, alpha=0.4)
+    ax.plot([0.5, 9.5], [16.6, 16.6], color=ch, linewidth=1.5, alpha=0.4)
 
     # Posicion ahora
-    ax.text(0.6, 15.4, "Posicion satelital ahora:",
+    ax.text(0.6, 16.2, "Posicion satelital ahora:",
             fontsize=8, va="center", color="#555555")
-    ax.text(0.6, 15.0, f"{abs(lat_base):.2f}S / {abs(lon_base):.2f}W",
+    ax.text(0.6, 15.8, f"{abs(lat_base):.2f}S / {abs(lon_base):.2f}W",
             fontsize=10, va="center", color="#212121", fontweight="bold")
 
     # Donde ir
-    ax.text(0.6, 14.4, f"Donde ir  llegada ~{t_tot:.0f}h:",
+    ax.text(0.6, 15.2, f"Donde ir   llegada aprox. {t_tot:.0f}h:",
             fontsize=8, va="center", color="#1B5E20")
-    ax.text(0.6, 14.0, f"{abs(lat_ch):.2f}S / {abs(lon_ch):.2f}W",
+    ax.text(0.6, 14.8, f"{abs(lat_ch):.2f}S / {abs(lon_ch):.2f}W",
             fontsize=11, va="center", color="#1B5E20", fontweight="bold")
 
     # Desplazamiento
-    ax.text(0.6, 13.4,
+    ax.text(0.6, 14.2,
             f"Agua se desplazo {desp_total:.1f} km hacia el {dir_txt}",
             fontsize=8, va="center", color="#0D47A1")
-    ax.text(0.6, 12.9, f"Distancia desde Chorrillos: {dist:.1f} km",
+    ax.text(0.6, 13.7,
+            f"Distancia desde Chorrillos: {dist:.1f} km",
             fontsize=8, va="center", color="#555555")
 
-    ax.plot([0.5, 9.5], [12.5, 12.5], color=ch, linewidth=1, alpha=0.3)
+    ax.plot([0.5, 9.5], [13.3, 13.3], color=ch, linewidth=1, alpha=0.3)
 
-    # Variables
+    # Variables oceanograficas
     vars_ = [
         ("Temp. superficial", f"{safe_float(sst):.1f} C"),
         ("Clorofila-a",       f"{safe_float(chl):.2f} mg/m3"),
@@ -218,7 +232,7 @@ def generar_tarjeta(score, semaforo, idx,
         ("Confianza operac.", conf),
     ]
 
-    y = 12.1
+    y = 12.9
     for lb, vl in vars_:
         ax.text(0.6, y, lb, fontsize=8, va="center", color="#555555")
         ax.text(9.5, y, vl, fontsize=9, va="center",
@@ -229,25 +243,31 @@ def generar_tarjeta(score, semaforo, idx,
 
     ax.plot([0.5, 9.5], [y+0.1, y+0.1], color=ch, linewidth=1, alpha=0.3)
 
-    ax.text(0.6, y-0.1, "Compatible con:", fontsize=8,
-            va="center", color="#555555")
-    ax.text(0.6, y-0.5, ctx_bio, fontsize=8,
-            va="center", color="#1B5E20", fontstyle="italic")
+    # Contexto biologico
+    ax.text(0.6, y-0.15, "Compatible con:",
+            fontsize=8, va="center", color="#555555")
+    ax.text(0.6, y-0.55, ctx_bio,
+            fontsize=8, va="center", color="#1B5E20", fontstyle="italic")
 
-    ax.plot([0.5, 9.5], [y-0.9, y-0.9], color=ch, linewidth=1, alpha=0.3)
+    ax.plot([0.5, 9.5], [y-0.95, y-0.95], color=ch, linewidth=1, alpha=0.3)
 
+    # Decision
     dec_color = "#1B5E20" if "RECOMENDADA" in decision else \
                 "#E65100" if "EXPLORATORIA" in decision else "#B71C1C"
-    ax.add_patch(FancyBboxPatch((0.3, y-1.7), 9.4, 0.7,
+    ax.add_patch(FancyBboxPatch((0.3, y-1.85), 9.4, 0.75,
                   boxstyle="round,pad=0.1",
                   facecolor=dec_color, alpha=0.15,
                   edgecolor=dec_color, linewidth=1))
-    ax.text(5, y-1.35, decision, ha="center", va="center",
-            fontsize=10, fontweight="bold", color=dec_color)
+    ax.text(5, y-1.5, decision,
+            ha="center", va="center", fontsize=10,
+            fontweight="bold", color=dec_color)
 
-    ax.text(5, 0.4, "PredictaMAR  Corriente de Humboldt  Peru",
+    # Footer
+    ax.text(5, 0.4,
+            "PredictaMAR   Corriente de Humboldt   Peru",
             ha="center", fontsize=6.5, color="#888888", style="italic")
-    ax.text(5, 0.1, "Score operacional  no es probabilidad estadistica",
+    ax.text(5, 0.1,
+            "Indice operativo   no es probabilidad estadistica",
             ha="center", fontsize=6, color="#AAAAAA", style="italic")
 
     plt.tight_layout(pad=0.5)
@@ -275,7 +295,7 @@ fecha_rep = df_rep["fecha"].iloc[0] if "fecha" in df_rep.columns else "—"
 st.info(f"📅 Reporte del: **{fecha_rep}** · {len(df_rep)} zonas analizadas")
 st.divider()
 
-# --- Slider radio ---
+# Slider radio
 radio_km = st.slider(
     "📏 Radio de busqueda desde Chorrillos (km)",
     min_value=10,
@@ -295,25 +315,29 @@ if df_radio.empty:
     st.stop()
 
 # Fuentes
-viirs_ok = df_radio["chl_fuente"].str.contains("VIIRS").any() if "chl_fuente" in df_radio.columns else False
-era5_ok  = df_radio["ekman_fuente"].str.contains("ERA5").any() if "ekman_fuente" in df_radio.columns else False
+viirs_ok = df_radio["chl_fuente"].str.contains("VIIRS").any() \
+           if "chl_fuente" in df_radio.columns else False
+era5_ok  = df_radio["ekman_fuente"].str.contains("ERA5").any() \
+           if "ekman_fuente" in df_radio.columns else False
 
 # Decision global
-mejor_score = float(df_radio["score"].max())
-mejor_sem   = df_radio.loc[df_radio["score"].idxmax(), "semaforo"]
-conf_zona   = confianza_operacional(mejor_score, viirs_ok, era5_ok)
-dec_zona    = decision_salida(mejor_sem, conf_zona)
+mejor_score  = float(df_radio["score"].max())
+mejor_sem    = df_radio.loc[df_radio["score"].idxmax(), "semaforo"]
+conf_zona    = confianza_operacional(mejor_score, viirs_ok, era5_ok)
+dec_zona     = decision_salida(mejor_sem, conf_zona)
+dec_emoji    = decision_emoji(dec_zona)
+indice_zona  = score_a_indice(mejor_score)
 ch_zona, cb_zona = COLORES_SEMAFORO.get(mejor_sem, ("#555", "#fff"))
 
 st.markdown(
     f"""<div style="background:{cb_zona}; border-left:5px solid {ch_zona};
     padding:14px 18px; border-radius:8px; margin-bottom:16px;">
     <span style="font-size:1.4em; font-weight:bold; color:{ch_zona};">
-    {dec_zona}
+    {dec_emoji} {dec_zona}
     </span><br>
     <span style="font-size:0.9em; color:#555;">
     Radio: {radio_km} km ·
-    Score max: {mejor_score:.2f} ·
+    Indice max: {indice_zona}% ·
     Confianza: {conf_zona}
     </span></div>""",
     unsafe_allow_html=True
@@ -328,9 +352,12 @@ st.divider()
 st.subheader(f"Zonas recomendadas — Radio {radio_km} km")
 
 # Mostrar top 3
-for i, (_, punto) in enumerate(df_radio.nlargest(3, 'score').reset_index(drop=True).iterrows()):
+for i, (_, punto) in enumerate(
+    df_radio.nlargest(3, 'score').reset_index(drop=True).iterrows()
+):
     score    = safe_float(punto.get("score", 0))
     semaforo = str(punto.get("semaforo", "ROJO"))
+    indice   = score_a_indice(score)
     lat_base = safe_float(punto.get("lat_T16", punto.get("lat_base", 0)))
     lon_base = safe_float(punto.get("lon_T16", punto.get("lon_base", 0)))
     dist     = safe_float(punto.get("dist_km", 0))
@@ -346,10 +373,11 @@ for i, (_, punto) in enumerate(df_radio.nlargest(3, 'score').reset_index(drop=Tr
     chl      = punto.get("chl", None)
     ctx_bio  = contexto_biologico(sst, chl)
     decision = decision_salida(semaforo, conf)
+    dec_em   = decision_emoji(decision)
     fecha    = str(punto.get("fecha", "—"))
 
     with st.expander(
-        f"Punto {i+1} — {semaforo} | Score {score:.2f} | {dist:.0f} km",
+        f"Punto {i+1} — {semaforo} | Indice: {indice}% | {dist:.0f} km",
         expanded=(i == 0)
     ):
         c1, c2 = st.columns(2)
@@ -367,10 +395,10 @@ for i, (_, punto) in enumerate(df_radio.nlargest(3, 'score').reset_index(drop=Tr
         )
 
         m1, m2, m3, m4 = st.columns(4)
-        m1.metric("🌡️ SST",       f"{safe_float(sst):.1f}C"  if sst else "—")
-        m2.metric("🌿 CHL",       f"{safe_float(chl):.2f}"   if chl else "—")
-        m3.metric("⚓ Confianza", conf)
-        m4.metric("📊 Score",     f"{score:.2f}")
+        m1.metric("🌡️ SST",              f"{safe_float(sst):.1f}C" if sst else "—")
+        m2.metric("🌿 CHL",              f"{safe_float(chl):.2f}"  if chl else "—")
+        m3.metric("⚓ Confianza",        conf)
+        m4.metric("📊 Indice operativo", f"{indice}%")
 
         st.markdown(f"🐟 **Compatible con:** _{ctx_bio}_")
 
@@ -380,7 +408,7 @@ for i, (_, punto) in enumerate(df_radio.nlargest(3, 'score').reset_index(drop=Tr
             f"""<div style="border:2px solid {dec_color}; border-radius:8px;
             padding:10px; text-align:center; margin:8px 0;">
             <span style="font-size:1.2em; font-weight:bold; color:{dec_color};">
-            {decision}
+            {dec_em} {decision}
             </span></div>""",
             unsafe_allow_html=True
         )
@@ -405,5 +433,5 @@ st.divider()
 st.caption(
     "PredictaMAR v6.2 · Corriente de Humboldt · Peru · "
     "Fuentes: CMEMS + VIIRS NASA + ERA5 + Sentinel-2 · "
-    "Score operacional — no es probabilidad estadistica"
+    "Indice operativo — no es probabilidad estadistica"
 )
