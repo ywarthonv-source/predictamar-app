@@ -217,27 +217,25 @@ def generar_tarjeta(score, semaforo, idx,
 
     ax.plot([0.5, 9.5], [16.9, 16.9], color=ch, linewidth=0.5, alpha=0.3)
 
-    # Posicion ahora
-    ax.text(0.6, 16.5, "Posicion satelital ahora:",
+    # Punto 1 — llega aqui primero
+    ax.text(0.6, 16.5, "Llega aqui primero:",
             fontsize=8, va="center", color="#555555")
     ax.text(0.6, 16.1, f"{abs(lat_base):.2f}S / {abs(lon_base):.2f}W",
             fontsize=10, va="center", color="#212121", fontweight="bold")
 
-    # Donde ir
-    ax.text(0.6, 15.5, f"Donde ir cuando llegues ({t_tot:.0f}h desde foto):",
-            fontsize=8, va="center", color="#1B5E20")
+    # Punto 2 — si no hay actividad
+    ax.text(0.6, 15.5,
+            f"Si no hay actividad en 30 min, avanza {desp_total:.1f} km al {dir_txt}:",
+            fontsize=7.5, va="center", color="#1B5E20")
     ax.text(0.6, 15.1, f"{abs(lat_ch):.2f}S / {abs(lon_ch):.2f}W",
-            fontsize=11, va="center", color="#1B5E20", fontweight="bold")
+            fontsize=10, va="center", color="#1B5E20", fontweight="bold")
 
-    # Desplazamiento
+    # Distancia
     ax.text(0.6, 14.5,
-            f"Agua se desplazo {desp_total:.1f} km hacia el {dir_txt}",
-            fontsize=8, va="center", color="#0D47A1")
-    ax.text(0.6, 14.0,
             f"Distancia desde Chorrillos: {dist:.1f} km",
             fontsize=8, va="center", color="#555555")
 
-    ax.plot([0.5, 9.5], [13.6, 13.6], color=ch, linewidth=1, alpha=0.3)
+    ax.plot([0.5, 9.5], [14.1, 14.1], color=ch, linewidth=1, alpha=0.3)
 
     # Variables
     vars_ = [
@@ -247,7 +245,7 @@ def generar_tarjeta(score, semaforo, idx,
         ("Confianza operac.", conf),
     ]
 
-    y = 13.2
+    y = 13.7
     for lb, vl in vars_:
         ax.text(0.6, y, lb, fontsize=8, va="center", color="#555555")
         ax.text(9.5, y, vl, fontsize=9, va="center",
@@ -403,17 +401,18 @@ for i, (_, punto) in enumerate(
         f"Punto {i+1} — {semaforo} | Indice: {indice}% | {dist:.0f} km",
         expanded=(i == 0)
     ):
+        # Dos coordenadas
         c1, c2 = st.columns(2)
         with c1:
-            st.markdown("**📍 Posicion satelital ahora**")
+            st.markdown("**📍 Llega aqui primero**")
             st.code(f"{abs(lat_base):.2f}S / {abs(lon_base):.2f}W")
         with c2:
-            st.markdown(f"**🎯 Donde ir cuando salgas**")
+            st.markdown(f"**🎯 Si no hay actividad, avanza al {dir_txt}**")
             st.code(f"{abs(lat_ch):.2f}S / {abs(lon_ch):.2f}W")
 
         st.info(
-            f"🌊 El agua estara **{desp_total:.1f} km hacia el {dir_txt}** "
-            f"de donde la vio el satelite\n\n"
+            f"🌊 Si no encuentras actividad en 30 min, avanza "
+            f"**{desp_total:.1f} km hacia el {dir_txt}**\n\n"
             f"📏 Distancia desde Chorrillos: **{dist:.1f} km** · "
             f"Salida: **{hora_salida_sel.split('(')[0].strip()}**"
         )
