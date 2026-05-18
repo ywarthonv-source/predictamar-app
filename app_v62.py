@@ -8,7 +8,7 @@ import pandas as pd
 import numpy as np
 import gspread
 from google.oauth2.service_account import Credentials
-from datetime import datetime, timedelta
+from datetime import datetime
 import io
 import matplotlib.pyplot as plt
 from matplotlib.patches import FancyBboxPatch
@@ -19,7 +19,6 @@ st.set_page_config(
     layout="centered"
 )
 
-# ── Utilidades ────────────────────────────────────────────────────
 def safe_float(val, default=0.0):
     try:
         return float(val)
@@ -64,7 +63,7 @@ if st.sidebar.button("Cerrar sesion"):
     st.session_state["autenticado"] = False
     st.rerun()
 
-# ── Conexion Google Sheets ────────────────────────────────────────
+# ── Sheets ────────────────────────────────────────────────────────
 @st.cache_resource
 def conectar_sheets():
     creds_info = dict(st.secrets["GOOGLE_CREDENTIALS"])
@@ -160,14 +159,14 @@ def decision_emoji(decision):
     if "PRECAUCION"   in decision: return "⚠️"
     return "🚫"
 
-# ── Generar tarjeta ───────────────────────────────────────────────
+# ── Tarjeta ───────────────────────────────────────────────────────
 def generar_tarjeta(score, semaforo, idx,
                     lat_base, lon_base, lat_ch, lon_ch,
                     desp_total, dir_txt, dist, t_tot,
                     sst, chl, conf, ctx_bio, decision, fecha, radio_km):
 
-    ch, cb  = COLORES_SEMAFORO.get(semaforo, ("#555", "#fff"))
-    indice  = score_a_indice(score)
+    ch, cb   = COLORES_SEMAFORO.get(semaforo, ("#555", "#fff"))
+    indice   = score_a_indice(score)
     ic_color = "#1B5E20" if indice >= 70 else \
                "#E65100" if indice >= 55 else "#B71C1C"
 
@@ -178,7 +177,6 @@ def generar_tarjeta(score, semaforo, idx,
     fig.patch.set_facecolor(cb)
     ax.set_facecolor(cb)
 
-    # Header
     ax.add_patch(FancyBboxPatch((0, 19.5), 10, 1.5,
                   boxstyle="round,pad=0.1", facecolor=ch, edgecolor="none"))
     ax.text(5, 20.3, "PREDICTAMAR   v6.2",
@@ -187,13 +185,11 @@ def generar_tarjeta(score, semaforo, idx,
     ax.text(5, 19.75, f"Puerto Chorrillos   {fecha}",
             ha="center", va="center", fontsize=8, color="white")
 
-    # Numero
     ax.add_patch(plt.Circle((5, 18.5), 0.65, color=ch, zorder=3))
     ax.text(5, 18.5, str(idx+1),
             ha="center", va="center", fontsize=16,
             fontweight="bold", color="white", zorder=4)
 
-    # Indice operativo
     ax.text(5, 17.5, f"Indice operativo: {indice}%",
             ha="center", va="center", fontsize=14,
             fontweight="bold", color=ic_color)
@@ -202,19 +198,16 @@ def generar_tarjeta(score, semaforo, idx,
 
     ax.plot([0.5, 9.5], [16.6, 16.6], color=ch, linewidth=1.5, alpha=0.4)
 
-    # Posicion ahora
     ax.text(0.6, 16.2, "Posicion satelital ahora:",
             fontsize=8, va="center", color="#555555")
     ax.text(0.6, 15.8, f"{abs(lat_base):.2f}S / {abs(lon_base):.2f}W",
             fontsize=10, va="center", color="#212121", fontweight="bold")
 
-    # Donde ir
     ax.text(0.6, 15.2, f"Donde ir   llegada aprox. {t_tot:.0f}h:",
             fontsize=8, va="center", color="#1B5E20")
     ax.text(0.6, 14.8, f"{abs(lat_ch):.2f}S / {abs(lon_ch):.2f}W",
             fontsize=11, va="center", color="#1B5E20", fontweight="bold")
 
-    # Desplazamiento
     ax.text(0.6, 14.2,
             f"Agua se desplazo {desp_total:.1f} km hacia el {dir_txt}",
             fontsize=8, va="center", color="#0D47A1")
@@ -224,7 +217,6 @@ def generar_tarjeta(score, semaforo, idx,
 
     ax.plot([0.5, 9.5], [13.3, 13.3], color=ch, linewidth=1, alpha=0.3)
 
-    # Variables oceanograficas
     vars_ = [
         ("Temp. superficial", f"{safe_float(sst):.1f} C"),
         ("Clorofila-a",       f"{safe_float(chl):.2f} mg/m3"),
@@ -243,7 +235,6 @@ def generar_tarjeta(score, semaforo, idx,
 
     ax.plot([0.5, 9.5], [y+0.1, y+0.1], color=ch, linewidth=1, alpha=0.3)
 
-    # Contexto biologico
     ax.text(0.6, y-0.15, "Compatible con:",
             fontsize=8, va="center", color="#555555")
     ax.text(0.6, y-0.55, ctx_bio,
@@ -251,7 +242,6 @@ def generar_tarjeta(score, semaforo, idx,
 
     ax.plot([0.5, 9.5], [y-0.95, y-0.95], color=ch, linewidth=1, alpha=0.3)
 
-    # Decision
     dec_color = "#1B5E20" if "RECOMENDADA" in decision else \
                 "#E65100" if "EXPLORATORIA" in decision else "#B71C1C"
     ax.add_patch(FancyBboxPatch((0.3, y-1.85), 9.4, 0.75,
@@ -262,12 +252,9 @@ def generar_tarjeta(score, semaforo, idx,
             ha="center", va="center", fontsize=10,
             fontweight="bold", color=dec_color)
 
-    # Footer
-    ax.text(5, 0.4,
-            "PredictaMAR   Corriente de Humboldt   Peru",
+    ax.text(5, 0.4, "PredictaMAR   Corriente de Humboldt   Peru",
             ha="center", fontsize=6.5, color="#888888", style="italic")
-    ax.text(5, 0.1,
-            "Indice operativo   no es probabilidad estadistica",
+    ax.text(5, 0.1, "Indice operativo   no es probabilidad estadistica",
             ha="center", fontsize=6, color="#AAAAAA", style="italic")
 
     plt.tight_layout(pad=0.5)
@@ -292,7 +279,7 @@ if df_rep is None or df_rep.empty:
     st.stop()
 
 fecha_rep = df_rep["fecha"].iloc[0] if "fecha" in df_rep.columns else "—"
-st.info(f"📅 Reporte del: **{fecha_rep}** · {len(df_rep)} zonas analizadas")
+st.info(f"📅 Reporte del: **{fecha_rep}** · {len(df_rep)} puntos disponibles")
 st.divider()
 
 # Slider radio
@@ -325,7 +312,7 @@ mejor_score  = float(df_radio["score"].max())
 mejor_sem    = df_radio.loc[df_radio["score"].idxmax(), "semaforo"]
 conf_zona    = confianza_operacional(mejor_score, viirs_ok, era5_ok)
 dec_zona     = decision_salida(mejor_sem, conf_zona)
-dec_emoji    = decision_emoji(dec_zona)
+dec_emoji_g  = decision_emoji(dec_zona)
 indice_zona  = score_a_indice(mejor_score)
 ch_zona, cb_zona = COLORES_SEMAFORO.get(mejor_sem, ("#555", "#fff"))
 
@@ -333,7 +320,7 @@ st.markdown(
     f"""<div style="background:{cb_zona}; border-left:5px solid {ch_zona};
     padding:14px 18px; border-radius:8px; margin-bottom:16px;">
     <span style="font-size:1.4em; font-weight:bold; color:{ch_zona};">
-    {dec_emoji} {dec_zona}
+    {dec_emoji_g} {dec_zona}
     </span><br>
     <span style="font-size:0.9em; color:#555;">
     Radio: {radio_km} km ·
@@ -349,9 +336,9 @@ col2.metric("💨 ERA5 Ekman",  "✅ Activo" if era5_ok  else "⚠️ Proxy")
 col3.metric("📊 Puntos zona", len(df_radio))
 
 st.divider()
-st.subheader(f"Zonas recomendadas — Radio {radio_km} km")
+st.subheader(f"Top 3 zonas — Radio {radio_km} km")
 
-# Mostrar top 3
+# Top 3
 for i, (_, punto) in enumerate(
     df_radio.nlargest(3, 'score').reset_index(drop=True).iterrows()
 ):
