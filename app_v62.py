@@ -79,7 +79,6 @@ def cargar_reporte():
         sh     = gc.open_by_key(st.secrets["SHEET_ID"])
         ws_rep = sh.worksheet("reporte_diario")
         df_rep = pd.DataFrame(ws_rep.get_all_records())
-        # Convertir columnas numericas
         for col in ['score','lat_base','lon_base','lat_T8','lon_T8',
                     'lat_T16','lon_T16','lat_T24','lon_T24',
                     'dist_km','desp_km','dlat_por_hora','dlon_por_hora',
@@ -94,9 +93,8 @@ def cargar_reporte():
 # ── Constantes ────────────────────────────────────────────────────
 LAT_CHORRILLOS = -12.15
 LON_CHORRILLOS = -77.02
-VELOCIDAD_15HP = 8.0
-VELOCIDAD_40HP = 15.0
 LATENCIA_S3_H  = 24.0
+VELOCIDAD_PROMEDIO = 10.0  # nudos promedio artesanal
 
 COLORES_SEMAFORO = {
     "VERDE":    ("#1B5E20", "#E8F5E9"),
@@ -105,22 +103,16 @@ COLORES_SEMAFORO = {
 }
 
 # ── Funciones ─────────────────────────────────────────────────────
-def distancia_km(lat1, lon1, lat2, lon2):
-    dlat = (lat2 - lat1) * 111
-    dlon = (lon2 - lon1) * 111 * np.cos(np.radians((lat1+lat2)/2))
-    return round(np.sqrt(dlat**2 + dlon**2), 1)
-
-def calcular_coordenada_christian(lat_base, lon_base,
-                                   dlat_h, dlon_h,
-                                   dist_zona_km, velocidad_nudos):
-    dist_nm  = dist_zona_km / 1.852
-    t_viaje  = dist_nm / velocidad_nudos
-    t_total  = LATENCIA_S3_H + t_viaje
-    lat_final = lat_base + dlat_h * t_total
-    lon_final = lon_base + dlon_h * t_total
-    desp_km   = round(np.sqrt((dlat_h*t_total*111)**2 +
-                               (dlon_h*t_total*111)**2), 1)
-    return round(lat_final, 2), round(lon_final, 2), round(t_total, 1), desp_km
+def calcular_coordenada_llegada(lat_base, lon_base,
+                                 dlat_h, dlon_h, dist_zona_km):
+    dist_nm = dist_zona_km / 1.852
+    t_viaje = dist_nm / VELOCIDAD_PROMEDIO
+    t_total = LATENCIA_S3_H + t_viaje
+    lat_f   = lat_base + dlat_h * t_total
+    lon_f   = lon_base + dlon_h * t_total
+    desp_km = round(np.sqrt((dlat_h*t_total*111)**2 +
+                             (dlon_h*t_total*111)**2), 1)
+    return round(lat_f, 2), round(lon_f, 2), round(t_total, 1), desp_km
 
 def direccion_cardinal(dlat, dlon):
     if abs(dlat) < 1e-6 and abs(dlon) < 1e-6:
@@ -161,10 +153,10 @@ def decision_salida(semaforo, confianza):
         return "🚫 NO SALIR HOY"
 
 # ── Generar tarjeta ───────────────────────────────────────────────
-def generar_tarjeta(zona_nom, score, semaforo, idx,
+def generar_tarjeta(score, semaforo, idx,
                     lat_base, lon_base, lat_ch, lon_ch,
                     desp_total, dir_txt, dist, t_tot,
-                    sst, chl, conf, ctx_bio, decision, fecha):
+                    sst, chl, conf, ctx_bio, decision, fecha, radio_km):
 
     ch, cb = COLORES_SEMAFORO.get(semaforo, ("#555", "#fff"))
 
@@ -178,64 +170,58 @@ def generar_tarjeta(zona_nom, score, semaforo, idx,
     # Header
     ax.add_patch(FancyBboxPatch((0, 18.5), 10, 1.5,
                   boxstyle="round,pad=0.1", facecolor=ch, edgecolor="none"))
-    ax.text(5, 19.3, "PREDICTAMAR  🎣  v6.2",
+    ax.text(5, 19.3, "PREDICTAMAR    v6.2",
             ha="center", va="center", fontsize=13,
             fontweight="bold", color="white", fontfamily="monospace")
-    ax.text(5, 18.75, f"Puerto Chorrillos · {fecha}",
+    ax.text(5, 18.75, f"Puerto Chorrillos  {fecha}",
             ha="center", va="center", fontsize=8, color="white")
 
-    # Numero y zona
+    # Numero
     ax.add_patch(plt.Circle((5, 17.5), 0.6, color=ch, zorder=3))
     ax.text(5, 17.5, str(idx+1),
             ha="center", va="center", fontsize=16,
             fontweight="bold", color="white", zorder=4)
-    ax.text(5, 16.7, zona_nom,
-            ha="center", va="center", fontsize=10,
+    ax.text(5, 16.7, f"Radio: {radio_km} km desde Chorrillos",
+            ha="center", va="center", fontsize=9,
             fontweight="bold", color=ch)
-    ax.text(5, 16.2, f"{semaforo} — Score: {score:.2f}",
+    ax.text(5, 16.2, f"{semaforo}  Score: {score:.2f}",
             ha="center", va="center", fontsize=9, color=ch)
 
     ax.plot([0.5, 9.5], [15.8, 15.8], color=ch, linewidth=1, alpha=0.4)
 
-    # Coordenada satelital
-    ax.text(0.5, 15.4, "📍", fontsize=10, va="center")
-    ax.text(1.3, 15.4, "Posicion satelital ahora:",
+    # Posicion ahora
+    ax.text(0.6, 15.4, "Posicion satelital ahora:",
             fontsize=8, va="center", color="#555555")
-    ax.text(1.3, 15.0, f"{abs(lat_base):.2f}S / {abs(lon_base):.2f}W",
+    ax.text(0.6, 15.0, f"{abs(lat_base):.2f}S / {abs(lon_base):.2f}W",
             fontsize=10, va="center", color="#212121", fontweight="bold")
 
-    # Coordenada Christian
-    ax.text(0.5, 14.4, "🎯", fontsize=10, va="center")
-    ax.text(1.3, 14.4, f"Donde ir — llegada ~{t_tot:.0f}h:",
+    # Donde ir
+    ax.text(0.6, 14.4, f"Donde ir  llegada ~{t_tot:.0f}h:",
             fontsize=8, va="center", color="#1B5E20")
-    ax.text(1.3, 14.0, f"{abs(lat_ch):.2f}S / {abs(lon_ch):.2f}W",
+    ax.text(0.6, 14.0, f"{abs(lat_ch):.2f}S / {abs(lon_ch):.2f}W",
             fontsize=11, va="center", color="#1B5E20", fontweight="bold")
 
     # Desplazamiento
-    ax.text(0.5, 13.4, "🌊", fontsize=10, va="center")
-    ax.text(1.3, 13.4, f"Agua se desplazo {desp_total:.1f} km hacia el {dir_txt}",
+    ax.text(0.6, 13.4,
+            f"Agua se desplazo {desp_total:.1f} km hacia el {dir_txt}",
             fontsize=8, va="center", color="#0D47A1")
-
-    # Distancia
-    ax.text(0.5, 12.9, "📏", fontsize=10, va="center")
-    ax.text(1.3, 12.9, f"Distancia desde Chorrillos: {dist:.1f} km",
+    ax.text(0.6, 12.9, f"Distancia desde Chorrillos: {dist:.1f} km",
             fontsize=8, va="center", color="#555555")
 
     ax.plot([0.5, 9.5], [12.5, 12.5], color=ch, linewidth=1, alpha=0.3)
 
     # Variables
     vars_ = [
-        ("🌡️", "Temp. superficial", f"{safe_float(sst):.1f} C"),
-        ("🌿", "Clorofila-a",       f"{safe_float(chl):.2f} mg/m3"),
-        ("📈", "Gradiente oceanico","activo" if score >= 0.55 else "debil"),
-        ("⚓", "Confianza operac.", conf),
+        ("Temp. superficial", f"{safe_float(sst):.1f} C"),
+        ("Clorofila-a",       f"{safe_float(chl):.2f} mg/m3"),
+        ("Gradiente oceanico","activo" if score >= 0.55 else "debil"),
+        ("Confianza operac.", conf),
     ]
 
     y = 12.1
-    for ev, lb, vl in vars_:
-        ax.text(0.5, y, ev,  fontsize=9,  va="center")
-        ax.text(1.3, y, lb,  fontsize=8,  va="center", color="#555555")
-        ax.text(9.5, y, vl,  fontsize=9,  va="center",
+    for lb, vl in vars_:
+        ax.text(0.6, y, lb, fontsize=8, va="center", color="#555555")
+        ax.text(9.5, y, vl, fontsize=9, va="center",
                 ha="right", fontweight="bold", color="#212121")
         ax.plot([0.5, 9.5], [y-0.3, y-0.3],
                 color="#CCCCCC", linewidth=0.5, alpha=0.5)
@@ -243,30 +229,25 @@ def generar_tarjeta(zona_nom, score, semaforo, idx,
 
     ax.plot([0.5, 9.5], [y+0.1, y+0.1], color=ch, linewidth=1, alpha=0.3)
 
-    # Contexto biologico
-    ax.text(0.5, y-0.1, "🐟", fontsize=10, va="center")
-    ax.text(1.3, y-0.1, "Compatible con:",
-            fontsize=8, va="center", color="#555555")
-    ax.text(1.3, y-0.5, ctx_bio,
-            fontsize=8, va="center", color="#1B5E20", fontstyle="italic")
+    ax.text(0.6, y-0.1, "Compatible con:", fontsize=8,
+            va="center", color="#555555")
+    ax.text(0.6, y-0.5, ctx_bio, fontsize=8,
+            va="center", color="#1B5E20", fontstyle="italic")
 
     ax.plot([0.5, 9.5], [y-0.9, y-0.9], color=ch, linewidth=1, alpha=0.3)
 
-    # Decision
     dec_color = "#1B5E20" if "RECOMENDADA" in decision else \
                 "#E65100" if "EXPLORATORIA" in decision else "#B71C1C"
     ax.add_patch(FancyBboxPatch((0.3, y-1.7), 9.4, 0.7,
                   boxstyle="round,pad=0.1",
                   facecolor=dec_color, alpha=0.15,
                   edgecolor=dec_color, linewidth=1))
-    ax.text(5, y-1.35, decision,
-            ha="center", va="center", fontsize=10,
-            fontweight="bold", color=dec_color)
+    ax.text(5, y-1.35, decision, ha="center", va="center",
+            fontsize=10, fontweight="bold", color=dec_color)
 
-    # Footer
-    ax.text(5, 0.4, "PredictaMAR · Corriente de Humboldt · Peru",
+    ax.text(5, 0.4, "PredictaMAR  Corriente de Humboldt  Peru",
             ha="center", fontsize=6.5, color="#888888", style="italic")
-    ax.text(5, 0.1, "Score operacional — no es probabilidad estadistica",
+    ax.text(5, 0.1, "Score operacional  no es probabilidad estadistica",
             ha="center", fontsize=6, color="#AAAAAA", style="italic")
 
     plt.tight_layout(pad=0.5)
@@ -291,37 +272,35 @@ if df_rep is None or df_rep.empty:
     st.stop()
 
 fecha_rep = df_rep["fecha"].iloc[0] if "fecha" in df_rep.columns else "—"
-n_zonas   = len(df_rep)
-st.info(f"📅 Reporte del: **{fecha_rep}** · {n_zonas} zonas analizadas")
+st.info(f"📅 Reporte del: **{fecha_rep}** · {len(df_rep)} zonas analizadas")
 st.divider()
 
-# Selector embarcacion
-tipo_emb = st.radio(
-    "⛵ Tipo de embarcacion",
-    ["🚤 Bote 15HP — Zona A (0-40 km)", "🛥️ Lancha 40HP — Zona B (40-80 km)"],
-    horizontal=True
+# --- Slider radio ---
+radio_km = st.slider(
+    "📏 Radio de busqueda desde Chorrillos (km)",
+    min_value=10,
+    max_value=80,
+    value=40,
+    step=5
 )
 
-zona_key  = "A_15HP" if "15HP" in tipo_emb else "B_40HP"
-vel_nudos = VELOCIDAD_15HP if "15HP" in tipo_emb else VELOCIDAD_40HP
-
 st.divider()
 
-# Filtrar zona
-df_zona = df_rep[df_rep["zona"] == zona_key].copy()
-df_zona["score"] = pd.to_numeric(df_zona["score"], errors='coerce').fillna(0)
+# Filtrar por radio
+df_radio = df_rep[df_rep["dist_km"] <= radio_km].copy()
+df_radio["score"] = pd.to_numeric(df_radio["score"], errors='coerce').fillna(0)
 
-if df_zona.empty:
-    st.warning(f"Sin puntos para zona {zona_key} hoy.")
+if df_radio.empty:
+    st.warning(f"Sin puntos dentro de {radio_km} km hoy. Aumenta el radio.")
     st.stop()
 
-# Fuentes activas
-viirs_ok = df_zona["chl_fuente"].str.contains("VIIRS").any() if "chl_fuente" in df_zona.columns else False
-era5_ok  = df_zona["ekman_fuente"].str.contains("ERA5").any() if "ekman_fuente" in df_zona.columns else False
+# Fuentes
+viirs_ok = df_radio["chl_fuente"].str.contains("VIIRS").any() if "chl_fuente" in df_radio.columns else False
+era5_ok  = df_radio["ekman_fuente"].str.contains("ERA5").any() if "ekman_fuente" in df_radio.columns else False
 
 # Decision global
-mejor_score = float(df_zona["score"].max())
-mejor_sem   = df_zona.loc[df_zona["score"].idxmax(), "semaforo"]
+mejor_score = float(df_radio["score"].max())
+mejor_sem   = df_radio.loc[df_radio["score"].idxmax(), "semaforo"]
 conf_zona   = confianza_operacional(mejor_score, viirs_ok, era5_ok)
 dec_zona    = decision_salida(mejor_sem, conf_zona)
 ch_zona, cb_zona = COLORES_SEMAFORO.get(mejor_sem, ("#555", "#fff"))
@@ -333,35 +312,33 @@ st.markdown(
     {dec_zona}
     </span><br>
     <span style="font-size:0.9em; color:#555;">
-    Zona {"A — Botes 15HP" if "A" in zona_key else "B — Lanchas 40HP"} ·
-    Score max: {mejor_score:.2f} · Confianza: {conf_zona}
+    Radio: {radio_km} km ·
+    Score max: {mejor_score:.2f} ·
+    Confianza: {conf_zona}
     </span></div>""",
     unsafe_allow_html=True
 )
 
-# Metricas fuentes
 col1, col2, col3 = st.columns(3)
-col1.metric("🛰️ VIIRS NASA",  "✅ Activo"    if viirs_ok else "⚠️ Solo CMEMS")
-col2.metric("💨 ERA5 Ekman",  "✅ Activo"    if era5_ok  else "⚠️ Proxy")
-col3.metric("📊 Puntos zona", len(df_zona))
+col1.metric("🛰️ VIIRS NASA",  "✅ Activo" if viirs_ok else "⚠️ Solo CMEMS")
+col2.metric("💨 ERA5 Ekman",  "✅ Activo" if era5_ok  else "⚠️ Proxy")
+col3.metric("📊 Puntos zona", len(df_radio))
 
 st.divider()
-st.subheader(f"Zonas recomendadas — {'Botes 15HP' if 'A' in zona_key else 'Lanchas 40HP'}")
+st.subheader(f"Zonas recomendadas — Radio {radio_km} km")
 
-# Mostrar puntos
-for i, (_, punto) in enumerate(df_zona.iterrows()):
+# Mostrar top 3
+for i, (_, punto) in enumerate(df_radio.nlargest(3, 'score').reset_index(drop=True).iterrows()):
     score    = safe_float(punto.get("score", 0))
     semaforo = str(punto.get("semaforo", "ROJO"))
-    ch, _    = COLORES_SEMAFORO.get(semaforo, ("#555", "#fff"))
-
     lat_base = safe_float(punto.get("lat_T16", punto.get("lat_base", 0)))
     lon_base = safe_float(punto.get("lon_T16", punto.get("lon_base", 0)))
     dist     = safe_float(punto.get("dist_km", 0))
     dlat_h   = safe_float(punto.get("dlat_por_hora", -0.0004))
     dlon_h   = safe_float(punto.get("dlon_por_hora", -0.0004))
 
-    lat_ch, lon_ch, t_tot, desp_total = calcular_coordenada_christian(
-        lat_base, lon_base, dlat_h, dlon_h, dist, vel_nudos
+    lat_ch, lon_ch, t_tot, desp_total = calcular_coordenada_llegada(
+        lat_base, lon_base, dlat_h, dlon_h, dist
     )
     dir_txt  = direccion_cardinal(dlat_h, dlon_h)
     conf     = confianza_operacional(score, viirs_ok, era5_ok)
@@ -384,13 +361,13 @@ for i, (_, punto) in enumerate(df_zona.iterrows()):
             st.code(f"{abs(lat_ch):.2f}S / {abs(lon_ch):.2f}W")
 
         st.info(
-            f"🌊 El agua se desplazará **{desp_total:.1f} km hacia el {dir_txt}** "
+            f"🌊 El agua se desplazara **{desp_total:.1f} km hacia el {dir_txt}** "
             f"desde la foto satelital hasta tu llegada\n\n"
             f"📏 Distancia desde Chorrillos: **{dist:.1f} km**"
         )
 
         m1, m2, m3, m4 = st.columns(4)
-        m1.metric("🌡️ SST",       f"{safe_float(sst):.1f}°C" if sst else "—")
+        m1.metric("🌡️ SST",       f"{safe_float(sst):.1f}C"  if sst else "—")
         m2.metric("🌿 CHL",       f"{safe_float(chl):.2f}"   if chl else "—")
         m3.metric("⚓ Confianza", conf)
         m4.metric("📊 Score",     f"{score:.2f}")
@@ -408,12 +385,11 @@ for i, (_, punto) in enumerate(df_zona.iterrows()):
             unsafe_allow_html=True
         )
 
-        zona_nom = "Zona A — Botes 15HP" if "A" in zona_key else "Zona B — Lanchas 40HP"
         buf = generar_tarjeta(
-            zona_nom, score, semaforo, i,
+            score, semaforo, i,
             lat_base, lon_base, lat_ch, lon_ch,
             desp_total, dir_txt, dist, t_tot,
-            sst, chl, conf, ctx_bio, decision, fecha
+            sst, chl, conf, ctx_bio, decision, fecha, radio_km
         )
         st.image(buf, use_column_width=True)
         buf.seek(0)
