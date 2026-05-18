@@ -330,6 +330,7 @@ viirs_ok = df_zona["chl_fuente"].str.contains("VIIRS").any() if "chl_fuente" in 
 era5_ok  = df_zona["ekman_fuente"].str.contains("ERA5").any() if "ekman_fuente" in df_zona.columns else False
 
 # Decision global de zona
+df_zona["score"] = pd.to_numeric(df_zona["score"], errors='coerce').fillna(0)
 mejor_score  = float(df_zona["score"].max()) if "score" in df_zona.columns else 0
 mejor_sem    = df_zona.loc[df_zona["score"].idxmax(), "semaforo"] if "score" in df_zona.columns else "ROJO"
 conf_zona    = confianza_operacional(mejor_score, viirs_ok, era5_ok)
