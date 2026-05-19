@@ -365,9 +365,10 @@ st.markdown(
 )
 
 col1, col2, col3 = st.columns(3)
+s2_cob = df_radio["s2_cobertura"].iloc[0] if "s2_cobertura" in df_radio.columns else 0
 col1.metric("🛰️ VIIRS NASA",  "✅ Activo" if viirs_ok else "⚠️ Solo CMEMS")
 col2.metric("💨 ERA5 Ekman",  "✅ Activo" if era5_ok  else "⚠️ Proxy")
-col3.metric("📊 Puntos zona", len(df_radio))
+col3.metric("🛰️ S2 cobertura", f"{s2_cob}%")
 
 st.divider()
 st.subheader(f"Top 3 zonas — Radio {radio_km} km")
