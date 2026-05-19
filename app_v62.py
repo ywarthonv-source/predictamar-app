@@ -85,13 +85,27 @@ def cargar_reporte():
         for col in ['score','lat_base','lon_base','lat_T8','lon_T8',
                     'lat_T16','lon_T16','lat_T24','lon_T24',
                     'dist_km','desp_km','dlat_por_hora','dlon_por_hora',
-                    'sst','chl']:
+                    'sst','chl','s2_cobertura']:
             if col in df_rep.columns:
                 df_rep[col] = pd.to_numeric(df_rep[col], errors='coerce')
         return df_rep
     except Exception as e:
         st.error(f"Error cargando reporte: {e}")
         return None
+
+@st.cache_data(ttl=1800)
+def cargar_ipo():
+    try:
+        gc     = conectar_sheets()
+        sh     = gc.open_by_key(st.secrets["SHEET_ID"])
+        ws_ipo = sh.worksheet("ipo_zonas")
+        df_ipo = pd.DataFrame(ws_ipo.get_all_records())
+        for col in ['ipo','lat_base','lon_base','n_corridas']:
+            if col in df_ipo.columns:
+                df_ipo[col] = pd.to_numeric(df_ipo[col], errors='coerce')
+        return df_ipo
+    except:
+        return pd.DataFrame()
 
 # ── Constantes ────────────────────────────────────────────────────
 LATENCIA_S3_H      = 24.0
@@ -112,6 +126,11 @@ HORAS_SALIDA = {
 }
 
 # ── Funciones ─────────────────────────────────────────────────────
+def distancia_km(lat1, lon1, lat2, lon2):
+    dlat = (lat2 - lat1) * 111
+    dlon = (lon2 - lon1) * 111 * np.cos(np.radians((lat1+lat2)/2))
+    return np.sqrt(dlat**2 + dlon**2)
+
 def calcular_coordenada_llegada(lat_base, lon_base,
                                  dlat_h, dlon_h,
                                  dist_zona_km, horas_salida):
@@ -168,74 +187,127 @@ def decision_emoji(decision):
     if "PRECAUCION"   in decision: return "⚠️"
     return "🚫"
 
+def buscar_ipo(lat, lon, df_ipo, radio_km=15):
+    if df_ipo is None or len(df_ipo) == 0:
+        return None, None, None
+    df_ipo = df_ipo.copy()
+    df_ipo['dist'] = df_ipo.apply(
+        lambda r: distancia_km(lat, lon,
+                               safe_float(r['lat_base']),
+                               safe_float(r['lon_base'])), axis=1
+    )
+    cercanos = df_ipo[df_ipo['dist'] <= radio_km]
+    if len(cercanos) == 0:
+        return None, None, None
+    mejor = cercanos.loc[cercanos['ipo'].idxmax()]
+    return safe_float(mejor['ipo']), str(mejor['ipo_label']), int(mejor['n_corridas'])
+
+def render_ipo(ipo_val, ipo_label, n_corridas):
+    if ipo_val is None:
+        return
+    max_corridas = 4
+    n = min(int(n_corridas), max_corridas)
+    barras_llenas = round(ipo_val * max_corridas)
+    barra = "█" * barras_llenas + "░" * (max_corridas - barras_llenas)
+
+    if ipo_label == "CONFIRMADA":
+        color = "#1B5E20"
+        emoji = "🟢"
+    elif ipo_label == "EN OBSERVACION":
+        color = "#F57F17"
+        emoji = "🟡"
+    else:
+        color = "#B71C1C"
+        emoji = "🔴"
+
+    st.markdown(
+        f"""<div style="background:#f8f8f8; border-left:4px solid {color};
+        padding:8px 12px; border-radius:6px; margin:8px 0;">
+        <span style="font-size:0.9em; color:{color}; font-weight:bold;">
+        {emoji} Persistencia: {barra} {n}/{max_corridas} corridas — {ipo_label}
+        </span>
+        </div>""",
+        unsafe_allow_html=True
+    )
+
 # ── Tarjeta ───────────────────────────────────────────────────────
 def generar_tarjeta(score, semaforo, idx,
                     lat_base, lon_base, lat_ch, lon_ch,
                     desp_total, dir_txt, dist, t_tot,
                     sst, chl, conf, ctx_bio, decision,
-                    fecha, radio_km, hora_salida_txt):
+                    fecha, radio_km, hora_salida_txt,
+                    ipo_val, ipo_label, n_corridas):
 
     ch, cb   = COLORES_SEMAFORO.get(semaforo, ("#555", "#fff"))
     indice   = score_a_indice(score)
     ic_color = "#1B5E20" if indice >= 70 else \
                "#E65100" if indice >= 55 else "#B71C1C"
 
-    fig, ax = plt.subplots(figsize=(5, 11))
+    fig, ax = plt.subplots(figsize=(5, 11.5))
     ax.set_xlim(0, 10)
-    ax.set_ylim(0, 22)
+    ax.set_ylim(0, 23)
     ax.axis("off")
     fig.patch.set_facecolor(cb)
     ax.set_facecolor(cb)
 
     # Header
-    ax.add_patch(FancyBboxPatch((0, 20.5), 10, 1.5,
+    ax.add_patch(FancyBboxPatch((0, 21.5), 10, 1.5,
                   boxstyle="round,pad=0.1", facecolor=ch, edgecolor="none"))
-    ax.text(5, 21.3, "PREDICTAMAR   v6.2",
+    ax.text(5, 22.3, "PREDICTAMAR   v6.2",
             ha="center", va="center", fontsize=13,
             fontweight="bold", color="white", fontfamily="monospace")
-    ax.text(5, 20.75, f"Puerto Chorrillos   {fecha}",
+    ax.text(5, 21.75, f"Puerto Chorrillos   {fecha}",
             ha="center", va="center", fontsize=8, color="white")
 
     # Numero
-    ax.add_patch(plt.Circle((5, 19.5), 0.65, color=ch, zorder=3))
-    ax.text(5, 19.5, str(idx+1),
+    ax.add_patch(plt.Circle((5, 20.5), 0.65, color=ch, zorder=3))
+    ax.text(5, 20.5, str(idx+1),
             ha="center", va="center", fontsize=16,
             fontweight="bold", color="white", zorder=4)
 
     # Indice
-    ax.text(5, 18.5, f"Indice operativo: {indice}%",
+    ax.text(5, 19.5, f"Indice operativo: {indice}%",
             ha="center", va="center", fontsize=14,
             fontweight="bold", color=ic_color)
-    ax.text(5, 18.0, f"{semaforo}   Radio: {radio_km} km",
+    ax.text(5, 19.0, f"{semaforo}   Radio: {radio_km} km",
             ha="center", va="center", fontsize=9, color=ch)
 
-    ax.plot([0.5, 9.5], [17.6, 17.6], color=ch, linewidth=1.5, alpha=0.4)
+    # IPO
+    if ipo_val is not None:
+        max_c = 4
+        barras = round(ipo_val * max_c)
+        barra  = "█" * barras + "░" * (max_c - barras)
+        ipo_color = "#1B5E20" if ipo_label == "CONFIRMADA" else \
+                    "#F57F17" if ipo_label == "EN OBSERVACION" else "#B71C1C"
+        ax.text(5, 18.5, f"Persistencia: {barra} {n_corridas}/4 — {ipo_label}",
+                ha="center", va="center", fontsize=8,
+                color=ipo_color, fontweight="bold")
+
+    ax.plot([0.5, 9.5], [18.1, 18.1], color=ch, linewidth=1.5, alpha=0.4)
 
     # Hora salida
-    ax.text(0.6, 17.2, f"Salida: {hora_salida_txt}",
+    ax.text(0.6, 17.7, f"Salida: {hora_salida_txt}",
             fontsize=8, va="center", color="#0D47A1", fontstyle="italic")
 
-    ax.plot([0.5, 9.5], [16.9, 16.9], color=ch, linewidth=0.5, alpha=0.3)
+    ax.plot([0.5, 9.5], [17.4, 17.4], color=ch, linewidth=0.5, alpha=0.3)
 
-    # Punto 1 — llega aqui primero
-    ax.text(0.6, 16.5, "Llega aqui primero:",
+    # Coordenadas
+    ax.text(0.6, 17.0, "Llega aqui primero:",
             fontsize=8, va="center", color="#555555")
-    ax.text(0.6, 16.1, f"{abs(lat_base):.2f}S / {abs(lon_base):.2f}W",
+    ax.text(0.6, 16.6, f"{abs(lat_base):.2f}S / {abs(lon_base):.2f}W",
             fontsize=10, va="center", color="#212121", fontweight="bold")
 
-    # Punto 2 — si no hay actividad
-    ax.text(0.6, 15.5,
+    ax.text(0.6, 16.0,
             f"Si no hay actividad en 30 min, avanza {desp_total:.1f} km al {dir_txt}:",
             fontsize=7.5, va="center", color="#1B5E20")
-    ax.text(0.6, 15.1, f"{abs(lat_ch):.2f}S / {abs(lon_ch):.2f}W",
+    ax.text(0.6, 15.6, f"{abs(lat_ch):.2f}S / {abs(lon_ch):.2f}W",
             fontsize=10, va="center", color="#1B5E20", fontweight="bold")
 
-    # Distancia
-    ax.text(0.6, 14.5,
+    ax.text(0.6, 15.0,
             f"Distancia desde Chorrillos: {dist:.1f} km",
             fontsize=8, va="center", color="#555555")
 
-    ax.plot([0.5, 9.5], [14.1, 14.1], color=ch, linewidth=1, alpha=0.3)
+    ax.plot([0.5, 9.5], [14.6, 14.6], color=ch, linewidth=1, alpha=0.3)
 
     # Variables
     vars_ = [
@@ -245,7 +317,7 @@ def generar_tarjeta(score, semaforo, idx,
         ("Confianza operac.", conf),
     ]
 
-    y = 13.7
+    y = 14.2
     for lb, vl in vars_:
         ax.text(0.6, y, lb, fontsize=8, va="center", color="#555555")
         ax.text(9.5, y, vl, fontsize=9, va="center",
@@ -263,7 +335,6 @@ def generar_tarjeta(score, semaforo, idx,
 
     ax.plot([0.5, 9.5], [y-0.95, y-0.95], color=ch, linewidth=1, alpha=0.3)
 
-    # Decision
     dec_color = "#1B5E20" if "RECOMENDADA" in decision else \
                 "#E65100" if "EXPLORATORIA" in decision else "#B71C1C"
     ax.add_patch(FancyBboxPatch((0.3, y-1.85), 9.4, 0.75,
@@ -274,7 +345,6 @@ def generar_tarjeta(score, semaforo, idx,
             ha="center", va="center", fontsize=10,
             fontweight="bold", color=dec_color)
 
-    # Footer
     ax.text(5, 0.4, "PredictaMAR   Corriente de Humboldt   Peru",
             ha="center", fontsize=6.5, color="#888888", style="italic")
     ax.text(5, 0.1, "Indice operativo   no es probabilidad estadistica",
@@ -296,6 +366,7 @@ st.title("🎣 PredictaMAR")
 st.caption("Sistema de prediccion de zonas de pesca · Puerto Chorrillos · Peru")
 
 df_rep = cargar_reporte()
+df_ipo = cargar_ipo()
 
 if df_rep is None or df_rep.empty:
     st.warning("Sin reporte disponible para hoy. El pipeline aun no corrio.")
@@ -308,19 +379,13 @@ st.divider()
 # Slider radio
 radio_km = st.slider(
     "📏 Radio de busqueda desde Chorrillos (km)",
-    min_value=10,
-    max_value=80,
-    value=40,
-    step=5
+    min_value=10, max_value=80, value=40, step=5
 )
 
 # Selector hora salida
 st.markdown("**⏰ Cuando piensas salir?**")
 hora_salida_sel = st.radio(
-    "",
-    list(HORAS_SALIDA.keys()),
-    index=3,
-    horizontal=False
+    "", list(HORAS_SALIDA.keys()), index=3, horizontal=False
 )
 horas_hasta_salida = HORAS_SALIDA[hora_salida_sel]
 
@@ -339,6 +404,8 @@ viirs_ok = df_radio["chl_fuente"].str.contains("VIIRS").any() \
            if "chl_fuente" in df_radio.columns else False
 era5_ok  = df_radio["ekman_fuente"].str.contains("ERA5").any() \
            if "ekman_fuente" in df_radio.columns else False
+s2_cob   = df_radio["s2_cobertura"].iloc[0] \
+           if "s2_cobertura" in df_radio.columns else 0
 
 # Decision global
 mejor_score  = float(df_radio["score"].max())
@@ -365,9 +432,8 @@ st.markdown(
 )
 
 col1, col2, col3 = st.columns(3)
-s2_cob = df_radio["s2_cobertura"].iloc[0] if "s2_cobertura" in df_radio.columns else 0
-col1.metric("🛰️ VIIRS NASA",  "✅ Activo" if viirs_ok else "⚠️ Solo CMEMS")
-col2.metric("💨 ERA5 Ekman",  "✅ Activo" if era5_ok  else "⚠️ Proxy")
+col1.metric("🛰️ VIIRS NASA",   "✅ Activo" if viirs_ok else "⚠️ Solo CMEMS")
+col2.metric("💨 ERA5 Ekman",   "✅ Activo" if era5_ok  else "⚠️ Proxy")
 col3.metric("🛰️ S2 cobertura", f"{s2_cob}%")
 
 st.divider()
@@ -398,11 +464,17 @@ for i, (_, punto) in enumerate(
     dec_em   = decision_emoji(decision)
     fecha    = str(punto.get("fecha", "—"))
 
+    # IPO
+    ipo_val, ipo_label, n_corridas = buscar_ipo(
+        safe_float(punto.get("lat_base", lat_base)),
+        safe_float(punto.get("lon_base", lon_base)),
+        df_ipo
+    )
+
     with st.expander(
         f"Punto {i+1} — {semaforo} | Indice: {indice}% | {dist:.0f} km",
         expanded=(i == 0)
     ):
-        # Dos coordenadas
         c1, c2 = st.columns(2)
         with c1:
             st.markdown("**📍 Llega aqui primero**")
@@ -417,6 +489,9 @@ for i, (_, punto) in enumerate(
             f"📏 Distancia desde Chorrillos: **{dist:.1f} km** · "
             f"Salida: **{hora_salida_sel.split('(')[0].strip()}**"
         )
+
+        # IPO visible
+        render_ipo(ipo_val, ipo_label, n_corridas)
 
         m1, m2, m3, m4 = st.columns(4)
         m1.metric("🌡️ SST",              f"{safe_float(sst):.1f}C" if sst else "—")
@@ -442,7 +517,8 @@ for i, (_, punto) in enumerate(
             lat_base, lon_base, lat_ch, lon_ch,
             desp_total, dir_txt, dist, t_tot,
             sst, chl, conf, ctx_bio, decision,
-            fecha, radio_km, hora_salida_sel.split("(")[0].strip()
+            fecha, radio_km, hora_salida_sel.split("(")[0].strip(),
+            ipo_val, ipo_label, n_corridas if n_corridas else 1
         )
         st.image(buf, use_column_width=True)
         buf.seek(0)
