@@ -35,24 +35,22 @@ print(f"Inicio: {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}")
 print("=" * 60)
 sys.stdout.flush()
 
-# ── Credenciales desde variables de entorno ───────────────────────
-CMEMS_USER   = os.environ["CMEMS_USER"]
-CMEMS_PASS   = os.environ["CMEMS_PASS"]
-NASA_TOKEN   = os.environ["NASA_TOKEN"]
-CDS_KEY      = os.environ["CDS_KEY"]
-SHEET_ID     = os.environ["SHEET_ID"]
-GOOGLE_SA    = os.environ["GOOGLE_SA_JSON"]
+# ── Credenciales ──────────────────────────────────────────────────
+CMEMS_USER = os.environ["CMEMS_USER"]
+CMEMS_PASS = os.environ["CMEMS_PASS"]
+NASA_TOKEN = os.environ["NASA_TOKEN"]
+CDS_KEY    = os.environ["CDS_KEY"]
+SHEET_ID   = os.environ["SHEET_ID"]
+GOOGLE_SA  = os.environ["GOOGLE_SA_JSON"]
 
 print("Credenciales cargadas OK")
 sys.stdout.flush()
 
 headers_nasa = {"Authorization": f"Bearer {NASA_TOKEN}"}
 
-# CDS
 with open(os.path.expanduser("~/.cdsapirc"), "w") as f:
     f.write(f"url: https://cds.climate.copernicus.eu/api\nkey: {CDS_KEY}\n")
 
-# Google Sheets via Service Account
 sa_info  = json.loads(GOOGLE_SA)
 scopes   = ["https://www.googleapis.com/auth/spreadsheets",
             "https://www.googleapis.com/auth/drive"]
@@ -62,7 +60,6 @@ sh       = gc.open_by_key(SHEET_ID)
 print(f"Sheets OK: {sh.title}")
 sys.stdout.flush()
 
-# CMEMS login
 copernicusmarine.login(
     username=CMEMS_USER,
     password=CMEMS_PASS,
@@ -71,7 +68,6 @@ copernicusmarine.login(
 print("CMEMS OK")
 sys.stdout.flush()
 
-# GEE via Service Account
 gee_creds = ee.ServiceAccountCredentials(
     sa_info["client_email"],
     key_data=sa_info["private_key"]
@@ -81,16 +77,16 @@ print("GEE OK")
 sys.stdout.flush()
 
 # ── Parametros ────────────────────────────────────────────────────
-LAT_MIN, LAT_MAX   = -22.0, -3.0
-LON_MIN, LON_MAX   = -85.0, -68.0
-LAT_CHRISTIAN      = -12.15
-LON_CHRISTIAN      = -77.02
-UMBRAL_VERDE       = 0.62
-UMBRAL_AMARILLO    = 0.52
-UMBRAL_S2          = 0.60
-BUFFER_M           = 3000
-W_S3, W_S2         = 0.80, 0.20
-DRIVE_BASE         = "/tmp/predictamar"
+LAT_MIN, LAT_MAX = -22.0, -3.0
+LON_MIN, LON_MAX = -85.0, -68.0
+LAT_CHRISTIAN    = -12.15
+LON_CHRISTIAN    = -77.02
+UMBRAL_VERDE     = 0.62
+UMBRAL_AMARILLO  = 0.52
+UMBRAL_S2        = 0.60
+BUFFER_M         = 3000
+W_S3, W_S2       = 0.80, 0.20
+DRIVE_BASE       = "/tmp/predictamar"
 os.makedirs(f"{DRIVE_BASE}/raw", exist_ok=True)
 
 FECHA_FIN     = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
@@ -101,7 +97,7 @@ sys.stdout.flush()
 W = {"chl": 0.30, "sst": 0.20, "front": 0.15,
      "ic": 0.15, "sla": 0.12, "grad_sla": 0.08}
 
-# ── Funciones utiles ──────────────────────────────────────────────
+# ── Funciones ─────────────────────────────────────────────────────
 def distancia_km(lat1, lon1, lat2, lon2):
     dlat = (lat2 - lat1) * 111
     dlon = (lon2 - lon1) * 111 * np.cos(np.radians((lat1+lat2)/2))
@@ -129,12 +125,6 @@ def normalizar_percentil(arr, p_low=10, p_high=90):
     norm[np.isnan(arr)] = np.nan
     return norm
 
-def calcular_desplazamiento(uo, vo, horas, lat_ref=-12.0):
-    segundos = horas * 3600
-    dlat_deg = (vo * segundos) / 111000
-    dlon_deg = (uo * segundos) / (111000 * np.cos(np.radians(lat_ref)))
-    return dlat_deg, dlon_deg
-
 def get_semaforo(score):
     if score >= UMBRAL_VERDE:      return "VERDE"
     elif score >= UMBRAL_AMARILLO: return "AMARILLO"
@@ -145,18 +135,18 @@ def descargar_cmems(dataset_id, variables, nombre, depth=True):
     out = f"{DRIVE_BASE}/raw/{nombre}.nc"
     if os.path.exists(out): os.remove(out)
     kwargs = dict(
-        dataset_id        = dataset_id,
-        variables         = variables,
-        minimum_latitude  = LAT_MIN,
-        maximum_latitude  = LAT_MAX,
-        minimum_longitude = LON_MIN,
-        maximum_longitude = LON_MAX,
-        start_datetime    = (FECHA_FIN - timedelta(days=7)).strftime("%Y-%m-%dT00:00:00"),
-        end_datetime      = FECHA_FIN.strftime("%Y-%m-%dT23:59:59"),
-        output_filename   = f"{nombre}.nc",
-        output_directory  = f"{DRIVE_BASE}/raw",
-        username          = CMEMS_USER,
-        password          = CMEMS_PASS,
+        dataset_id           = dataset_id,
+        variables            = variables,
+        minimum_latitude     = LAT_MIN,
+        maximum_latitude     = LAT_MAX,
+        minimum_longitude    = LON_MIN,
+        maximum_longitude    = LON_MAX,
+        start_datetime       = (FECHA_FIN - timedelta(days=7)).strftime("%Y-%m-%dT00:00:00"),
+        end_datetime         = FECHA_FIN.strftime("%Y-%m-%dT23:59:59"),
+        output_filename      = f"{nombre}.nc",
+        output_directory     = f"{DRIVE_BASE}/raw",
+        username             = CMEMS_USER,
+        password             = CMEMS_PASS,
         disable_progress_bar = True
     )
     if depth:
@@ -262,6 +252,8 @@ vo_grid  = interpolar_a_olci(ds_cur, "vo")
 
 uo_mean_val = float(np.nanmean(uo_grid))
 vo_mean_val = float(np.nanmean(vo_grid))
+print(f"Corrientes — uo medio: {uo_mean_val:.4f} m/s | vo medio: {vo_mean_val:.4f} m/s")
+sys.stdout.flush()
 
 SST_P05  = np.nanpercentile(sst_grid[~np.isnan(sst_grid)], 5)
 SST_P95  = np.nanpercentile(sst_grid[~np.isnan(sst_grid)], 95)
@@ -313,6 +305,8 @@ df_grilla  = pd.DataFrame({
     'sst':         sst_grid.ravel(),
     'sla':         sla_grid.ravel(),
     'chl':         chl_mean_masked.ravel(),
+    'uo':          uo_grid.ravel(),
+    'vo':          vo_grid.ravel(),
 }).dropna(subset=['score_total']).reset_index(drop=True)
 
 df_grilla = df_grilla[
@@ -351,6 +345,9 @@ s2_clean = (ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
               .median())
 
 resultados_s2 = []
+s2_con_dato   = 0
+s2_sin_dato   = 0
+
 for i in range(0, len(df_candidatos), 50):
     batch  = df_candidatos.iloc[i:i+50]
     puntos = []
@@ -359,7 +356,9 @@ for i in range(0, len(df_candidatos), 50):
             puntos.append(ee.Feature(
                 ee.Geometry.Point([float(r['LON_REF']), float(r['LAT_REF'])]).buffer(BUFFER_M),
                 {'lat': float(r['LAT_REF']), 'lon': float(r['LON_REF']),
-                 'score_s3': float(r['score_total'])}
+                 'score_s3': float(r['score_total']),
+                 'uo': float(r['uo']) if not np.isnan(r['uo']) else 0.0,
+                 'vo': float(r['vo']) if not np.isnan(r['vo']) else 0.0}
             ))
         except: continue
     if not puntos: continue
@@ -370,13 +369,30 @@ for i in range(0, len(df_candidatos), 50):
         ).getInfo()
         for feat in res['features']:
             p = feat['properties']
+            fai_val = p.get('FAI', np.nan)
+            isb_val = p.get('ISB', np.nan)
+            tiene_s2 = not (fai_val is None or np.isnan(fai_val))
+            if tiene_s2:
+                s2_con_dato += 1
+            else:
+                s2_sin_dato += 1
             resultados_s2.append({
-                'LAT_REF':  p['lat'], 'LON_REF': p['lon'],
+                'LAT_REF':  p['lat'],
+                'LON_REF':  p['lon'],
                 'score_s3': p['score_s3'],
-                'FAI':      p.get('FAI', np.nan),
-                'ISB':      p.get('ISB', np.nan)
+                'uo':       p.get('uo', 0.0),
+                'vo':       p.get('vo', 0.0),
+                'FAI':      fai_val if fai_val is not None else np.nan,
+                'ISB':      isb_val if isb_val is not None else np.nan,
+                's2_dato':  tiene_s2
             })
     except: pass
+
+# Cobertura S2
+total_s2   = s2_con_dato + s2_sin_dato
+cobertura_s2 = round(s2_con_dato / max(total_s2, 1) * 100, 1)
+print(f"S2 cobertura: {cobertura_s2}% ({s2_con_dato} con dato / {s2_sin_dato} nube/sin dato)")
+sys.stdout.flush()
 
 df_s2 = pd.DataFrame(resultados_s2)
 if len(df_s2) > 0:
@@ -387,39 +403,104 @@ if len(df_s2) > 0:
         W_S3 * df_s2['score_s3'] +
         W_S2 * (df_s2['FAI_norm'] * 0.6 + df_s2['ISB_norm'] * 0.4)
     )
-    df_s2_final = df_s2[['LAT_REF','LON_REF','score_fusionado']]
+    df_s2_final = df_s2[['LAT_REF','LON_REF','score_fusionado','uo','vo','s2_dato']]
 else:
-    df_s2_final = pd.DataFrame(columns=['LAT_REF','LON_REF','score_fusionado'])
+    df_s2_final = pd.DataFrame(columns=['LAT_REF','LON_REF','score_fusionado','uo','vo','s2_dato'])
 
-df_resto_final = df_resto[['LAT_REF','LON_REF','score_total']].rename(
+df_resto_final = df_resto[['LAT_REF','LON_REF','score_total','uo','vo']].rename(
     columns={'score_total': 'score_fusionado'}
 )
+df_resto_final['s2_dato'] = False
+
 df_final = pd.concat([df_s2_final, df_resto_final], ignore_index=True)
 df_final = df_final.sort_values('score_fusionado', ascending=False).reset_index(drop=True)
 df_final['fecha'] = FECHA_FIN_STR
 
+# Agregar sst y chl desde df_grilla
+interp_sst = RegularGridInterpolator(
+    (LAT_REF, LON_REF),
+    np.where(np.isnan(sst_grid), 0, sst_grid),
+    method='linear', bounds_error=False, fill_value=np.nan
+)
+interp_chl = RegularGridInterpolator(
+    (LAT_REF, LON_REF),
+    np.where(np.isnan(chl_mean_masked), 0, chl_mean_masked),
+    method='linear', bounds_error=False, fill_value=np.nan
+)
+
+pts_final = np.column_stack([df_final['LAT_REF'].values, df_final['LON_REF'].values])
+df_final['sst'] = interp_sst(pts_final)
+df_final['chl'] = interp_chl(pts_final)
+
 print(f"Puntos finales: {len(df_final)}")
 sys.stdout.flush()
 
-# ── Adveccion ─────────────────────────────────────────────────────
-lat_med  = df_final['LAT_REF'].mean()
-dl8,  dn8  = calcular_desplazamiento(uo_mean_val, vo_mean_val, 8,  lat_ref=lat_med)
-dl16, dn16 = calcular_desplazamiento(uo_mean_val, vo_mean_val, 16, lat_ref=lat_med)
-dl24, dn24 = calcular_desplazamiento(uo_mean_val, vo_mean_val, 24, lat_ref=lat_med)
+# ── Adveccion LOCAL por punto ─────────────────────────────────────
+print("\nCalculando adveccion local por punto...")
+sys.stdout.flush()
 
-df_final['LAT_T8']   = df_final['LAT_REF'] + dl8
-df_final['LON_T8']   = df_final['LON_REF'] + dn8
-df_final['LAT_T16']  = df_final['LAT_REF'] + dl16
-df_final['LON_T16']  = df_final['LON_REF'] + dn16
-df_final['LAT_T24']  = df_final['LAT_REF'] + dl24
-df_final['LON_T24']  = df_final['LON_REF'] + dn24
-df_final['delta_km'] = np.sqrt((dl16*111)**2 + (dn16*111)**2)
-df_final['dist_ch']  = df_final.apply(
+interp_uo = RegularGridInterpolator(
+    (LAT_REF, LON_REF),
+    np.where(np.isnan(uo_grid), 0, uo_grid),
+    method='linear', bounds_error=False, fill_value=0.0
+)
+interp_vo = RegularGridInterpolator(
+    (LAT_REF, LON_REF),
+    np.where(np.isnan(vo_grid), 0, vo_grid),
+    method='linear', bounds_error=False, fill_value=0.0
+)
+
+def adveccion_local(lat, lon, horas):
+    pt        = np.array([[lat, lon]])
+    uo_local  = float(interp_uo(pt)[0])
+    vo_local  = float(interp_vo(pt)[0])
+    segundos  = horas * 3600
+    dlat      = (vo_local * segundos) / 111000
+    dlon      = (uo_local * segundos) / (111000 * np.cos(np.radians(lat)))
+    return dlat, dlon
+
+lats_ref = df_final['LAT_REF'].values
+lons_ref = df_final['LON_REF'].values
+n        = len(df_final)
+
+lat_t8  = np.zeros(n)
+lon_t8  = np.zeros(n)
+lat_t16 = np.zeros(n)
+lon_t16 = np.zeros(n)
+lat_t24 = np.zeros(n)
+lon_t24 = np.zeros(n)
+dlat_h  = np.zeros(n)
+dlon_h  = np.zeros(n)
+
+for i in range(n):
+    dl8,  dn8  = adveccion_local(lats_ref[i], lons_ref[i], 8)
+    dl16, dn16 = adveccion_local(lats_ref[i], lons_ref[i], 16)
+    dl24, dn24 = adveccion_local(lats_ref[i], lons_ref[i], 24)
+    lat_t8[i]  = lats_ref[i] + dl8
+    lon_t8[i]  = lons_ref[i] + dn8
+    lat_t16[i] = lats_ref[i] + dl16
+    lon_t16[i] = lons_ref[i] + dn16
+    lat_t24[i] = lats_ref[i] + dl24
+    lon_t24[i] = lons_ref[i] + dn24
+    dlat_h[i]  = dl16 / 16
+    dlon_h[i]  = dn16 / 16
+
+df_final['LAT_T8']        = lat_t8
+df_final['LON_T8']        = lon_t8
+df_final['LAT_T16']       = lat_t16
+df_final['LON_T16']       = lon_t16
+df_final['LAT_T24']       = lat_t24
+df_final['LON_T24']       = lon_t24
+df_final['delta_km']      = np.sqrt(((lat_t16 - lats_ref)*111)**2 +
+                                     ((lon_t16 - lons_ref)*111)**2)
+df_final['dlat_por_hora'] = dlat_h
+df_final['dlon_por_hora'] = dlon_h
+df_final['dist_ch']       = df_final.apply(
     lambda r: distancia_km(LAT_CHRISTIAN, LON_CHRISTIAN, r['LAT_T16'], r['LON_T16']), axis=1
 )
 
-dlat_por_hora = dl16 / 16
-dlon_por_hora = dn16 / 16
+print(f"Adveccion local calculada: {n} puntos")
+sys.stdout.flush()
 
 # ── Exportar reporte por anillos ──────────────────────────────────
 print("\nExportando reporte por anillos...")
@@ -449,8 +530,8 @@ sys.stdout.flush()
 reporte_rows = []
 for i, row in df_reporte.iterrows():
     score   = float(row['score_fusionado'])
-    sst_val = round(float(row['sst']), 2) if 'sst' in row and not pd.isna(row['sst']) else None
-    chl_val = round(float(row['chl']), 3) if 'chl' in row and not pd.isna(row['chl']) else None
+    sst_val = round(float(row['sst']), 2) if not pd.isna(row['sst']) else None
+    chl_val = round(float(row['chl']), 3) if not pd.isna(row['chl']) else None
 
     reporte_rows.append({
         'rank':           i + 1,
@@ -466,13 +547,15 @@ for i, row in df_reporte.iterrows():
         'lon_T24':        round(float(row['LON_T24']), 4),
         'dist_km':        round(float(row['dist_ch']),  1),
         'desp_km':        round(float(row['delta_km']), 1),
-        'dlat_por_hora':  round(dlat_por_hora, 6),
-        'dlon_por_hora':  round(dlon_por_hora, 6),
+        'dlat_por_hora':  round(float(row['dlat_por_hora']), 6),
+        'dlon_por_hora':  round(float(row['dlon_por_hora']), 6),
         'sst':            sst_val,
         'chl':            chl_val,
+        's2_dato':        bool(row.get('s2_dato', False)),
         'fecha':          FECHA_FIN_STR,
         'chl_fuente':     'VIIRS+CMEMS' if VIIRS_DISPONIBLE else 'CMEMS',
-        'ekman_fuente':   'ERA5'
+        'ekman_fuente':   'ERA5',
+        's2_cobertura':   cobertura_s2
     })
 
 df_rep = pd.DataFrame(reporte_rows)
@@ -504,6 +587,7 @@ print(f"Mapa exportado: {len(df_export)} filas")
 
 print("\n" + "="*60)
 print(f"PredictaMAR v6.2 COMPLETO — {FECHA_FIN_STR}")
+print(f"Cobertura S2: {cobertura_s2}%")
 print(f"Fin: {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}")
 print("="*60)
 sys.stdout.flush()
