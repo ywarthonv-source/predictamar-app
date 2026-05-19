@@ -584,7 +584,152 @@ except:
 
 set_with_dataframe(ws, df_export)
 print(f"Mapa exportado: {len(df_export)} filas")
+# ── Historial de persistencia ─────────────────────────────────────
+print("\nActualizando historial de persistencia...")
+sys.stdout.flush()
 
+HORA_UTC = datetime.utcnow().strftime("%Y-%m-%d %H:%M")
+
+# Cargar historial existente
+try:
+    ws_hist = sh.worksheet('historial_zonas')
+    df_hist = pd.DataFrame(ws_hist.get_all_records())
+    if len(df_hist) > 0:
+        df_hist['score'] = pd.to_numeric(df_hist['score'], errors='coerce')
+        df_hist['lat_base'] = pd.to_numeric(df_hist['lat_base'], errors='coerce')
+        df_hist['lon_base'] = pd.to_numeric(df_hist['lon_base'], errors='coerce')
+        df_hist['sst'] = pd.to_numeric(df_hist['sst'], errors='coerce')
+except:
+    ws_hist = sh.add_worksheet(title='historial_zonas', rows=5000, cols=20)
+    df_hist = pd.DataFrame()
+
+# Agregar corrida actual al historial
+nuevas_filas = []
+for _, row in df_rep.iterrows():
+    nuevas_filas.append({
+        'fecha':         FECHA_FIN_STR,
+        'hora_utc':      HORA_UTC,
+        'lat_base':      round(float(row['lat_base']), 4),
+        'lon_base':      round(float(row['lon_base']), 4),
+        'score':         round(float(row['score']), 3),
+        'semaforo':      row['semaforo'],
+        'dist_km':       round(float(row['dist_km']), 1),
+        'sst':           row['sst'],
+        'chl':           row['chl'],
+        'anillo':        int(row['dist_km'] // 10) * 10,
+        'chl_fuente':    row['chl_fuente'],
+        's2_cobertura':  row['s2_cobertura']
+    })
+
+df_nuevas = pd.DataFrame(nuevas_filas)
+
+# Concatenar y mantener solo 7 dias
+if len(df_hist) > 0:
+    df_hist_total = pd.concat([df_hist, df_nuevas], ignore_index=True)
+else:
+    df_hist_total = df_nuevas
+
+# Filtrar ultimos 7 dias
+fecha_limite = (datetime.utcnow() - timedelta(days=7)).strftime("%Y-%m-%d")
+df_hist_total = df_hist_total[df_hist_total['fecha'] >= fecha_limite].reset_index(drop=True)
+
+# Guardar historial actualizado
+ws_hist.clear()
+set_with_dataframe(ws_hist, df_hist_total)
+print(f"Historial actualizado: {len(df_hist_total)} registros")
+sys.stdout.flush()
+
+# ── Calcular IPO por zona ─────────────────────────────────────────
+print("Calculando IPO...")
+sys.stdout.flush()
+
+# Solo ultimas 24h para IPO operacional
+fecha_24h = (datetime.utcnow() - timedelta(hours=24)).strftime("%Y-%m-%d %H:%M")
+df_24h = df_hist_total[df_hist_total['hora_utc'] >= fecha_24h].copy()
+
+ipo_rows = []
+
+for _, punto_actual in df_rep.iterrows():
+    lat_ref = float(punto_actual['lat_base'])
+    lon_ref = float(punto_actual['lon_base'])
+
+    # Buscar corridas cercanas en 24h (radio 15km)
+    if len(df_24h) > 0:
+        df_24h['dist_ref'] = df_24h.apply(
+            lambda r: distancia_km(lat_ref, lon_ref,
+                                   float(r['lat_base']), float(r['lon_base'])), axis=1
+        )
+        vecinos = df_24h[df_24h['dist_ref'] <= 15].copy()
+    else:
+        vecinos = pd.DataFrame()
+
+    n_corridas = len(vecinos['hora_utc'].unique()) if len(vecinos) > 0 else 1
+
+    # Persistencia semaforo
+    if len(vecinos) > 0:
+        n_activas = vecinos[vecinos['semaforo'].isin(['VERDE','AMARILLO'])].shape[0]
+        pers_sem  = n_activas / max(len(vecinos), 1)
+    else:
+        pers_sem  = 0.5
+
+    # Estabilidad espacial — drift promedio
+    if len(vecinos) >= 2:
+        lats_v = vecinos['lat_base'].values
+        lons_v = vecinos['lon_base'].values
+        drift  = np.mean([distancia_km(lats_v[i], lons_v[i],
+                                        lats_v[i-1], lons_v[i-1])
+                          for i in range(1, len(lats_v))])
+        estab_esp = max(0, 1 - drift / 10)
+    else:
+        estab_esp = 0.7
+
+    # Estabilidad SST
+    if len(vecinos) >= 2 and vecinos['sst'].notna().sum() >= 2:
+        sst_std   = vecinos['sst'].std()
+        estab_sst = max(0, 1 - sst_std / 1.0)
+    else:
+        estab_sst = 0.7
+
+    # Frescura dato
+    s2_cob    = float(punto_actual.get('s2_cobertura', 0)) / 100
+    frescura  = 0.5 + 0.5 * s2_cob
+
+    # IPO final
+    ipo = (0.40 * pers_sem +
+           0.30 * estab_esp +
+           0.20 * estab_sst +
+           0.10 * frescura)
+    ipo = round(float(np.clip(ipo, 0, 1)), 3)
+
+    if ipo >= 0.75:   ipo_label = "CONFIRMADA"
+    elif ipo >= 0.50: ipo_label = "EN OBSERVACION"
+    else:             ipo_label = "INESTABLE"
+
+    ipo_rows.append({
+        'rank':      punto_actual['rank'],
+        'lat_base':  lat_ref,
+        'lon_base':  lon_ref,
+        'ipo':       ipo,
+        'ipo_label': ipo_label,
+        'n_corridas': n_corridas,
+        'fecha':     FECHA_FIN_STR
+    })
+
+df_ipo = pd.DataFrame(ipo_rows)
+
+# Guardar IPO en Sheets
+try:
+    ws_ipo = sh.worksheet('ipo_zonas')
+    ws_ipo.clear()
+except:
+    ws_ipo = sh.add_worksheet(title='ipo_zonas', rows=150, cols=10)
+
+set_with_dataframe(ws_ipo, df_ipo)
+print(f"IPO calculado: {len(df_ipo)} zonas")
+print(f"  CONFIRMADAS:     {(df_ipo['ipo_label']=='CONFIRMADA').sum()}")
+print(f"  EN OBSERVACION:  {(df_ipo['ipo_label']=='EN OBSERVACION').sum()}")
+print(f"  INESTABLES:      {(df_ipo['ipo_label']=='INESTABLE').sum()}")
+sys.stdout.flush()
 print("\n" + "="*60)
 print(f"PredictaMAR v6.2 COMPLETO — {FECHA_FIN_STR}")
 print(f"Cobertura S2: {cobertura_s2}%")
