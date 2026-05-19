@@ -2,32 +2,38 @@ name: PredictaMAR Pipeline v6.2
 
 on:
   schedule:
-    - cron: '0 11 * * *'   # 6am Lima (UTC-5) = 11am UTC
+    - cron: '0 11 * * *'   # 6am Lima
     - cron: '0 17 * * *'   # 12pm Lima
     - cron: '0 23 * * *'   # 6pm Lima
     - cron: '0 5 * * *'    # 12am Lima
-  workflow_dispatch:        # permite correr manualmente
+  workflow_dispatch:
 
 jobs:
   run-pipeline:
     runs-on: ubuntu-latest
+    timeout-minutes: 90
+
     steps:
-      - name: Checkout repo
+      - name: Checkout
         uses: actions/checkout@v3
 
-      - name: Setup Python
+      - name: Python 3.10
         uses: actions/setup-python@v4
         with:
           python-version: '3.10'
 
-      - name: Install papermill
-        run: pip install papermill nbconvert jupyter
+      - name: Instalar dependencias
+        run: |
+          pip install copernicusmarine gspread gspread-dataframe \
+                      earthengine-api xarray scipy numpy pandas \
+                      requests netCDF4 h5netcdf
 
-      - name: Run pipeline via Google Colab API
+      - name: Correr pipeline
         env:
+          CMEMS_USER:     ${{ secrets.CMEMS_USER }}
+          CMEMS_PASS:     ${{ secrets.CMEMS_PASS }}
+          NASA_TOKEN:     ${{ secrets.NASA_TOKEN }}
+          CDS_KEY:        ${{ secrets.CDS_KEY }}
+          SHEET_ID:       ${{ secrets.SHEET_ID }}
           GOOGLE_SA_JSON: ${{ secrets.GOOGLE_SA_JSON }}
-          CMEMS_USER: ${{ secrets.CMEMS_USER }}
-          CMEMS_PASS: ${{ secrets.CMEMS_PASS }}
-          NASA_TOKEN: ${{ secrets.NASA_TOKEN }}
-          CDS_KEY: ${{ secrets.CDS_KEY }}
-        run: echo "Pipeline trigger OK — scheduler activo"
+        run: python pipeline.py
