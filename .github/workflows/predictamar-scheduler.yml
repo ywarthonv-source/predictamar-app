@@ -38,4 +38,4 @@ jobs:
           CDS_KEY:        ${{ secrets.CDS_KEY }}
           SHEET_ID:       ${{ secrets.SHEET_ID }}
           GOOGLE_SA_JSON: ${{ secrets.GOOGLE_SA_JSON }}
-        run: python pipeline.py
+        run: python -u pipeline.py
