@@ -506,9 +506,10 @@ sys.stdout.flush()
 print("\nExportando reporte por anillos...")
 sys.stdout.flush()
 
+# Sin filtro de score minimo — siempre exportar los mejores disponibles
+# El semaforo comunica la calidad, no el filtro
 df_validos = df_final[
-    (df_final['dist_ch'] <= 80) &
-    (df_final['score_fusionado'] >= 0.50)
+    df_final['dist_ch'] <= 80
 ].copy()
 
 anillos = [(0,10),(10,20),(20,30),(30,40),(40,50),(50,60),(60,70),(70,80)]
