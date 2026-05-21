@@ -396,8 +396,15 @@ df_radio = df_rep[df_rep["dist_km"] <= radio_km].copy()
 df_radio["score"] = pd.to_numeric(df_radio["score"], errors='coerce').fillna(0)
 
 if df_radio.empty:
-    st.warning(f"Sin puntos dentro de {radio_km} km hoy. Aumenta el radio.")
-    st.stop()
+    # No hay puntos en el radio — mostrar los 3 más cercanos disponibles
+    df_radio = df_rep.copy()
+    df_radio["score"] = pd.to_numeric(df_radio["score"], errors='coerce').fillna(0)
+    mejor_cercano = df_radio.nsmallest(1, "dist_km")["dist_km"].values[0]
+    st.warning(
+        f"⚠️ Sin puntos dentro de {radio_km} km hoy. "
+        f"Las mejores condiciones están a {mejor_cercano:.0f} km de Chorrillos. "
+        f"Mostrando los puntos más cercanos disponibles."
+    )
 
 # Fuentes
 viirs_ok = df_radio["chl_fuente"].str.contains("VIIRS").any() \
