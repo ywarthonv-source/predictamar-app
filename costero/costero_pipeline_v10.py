@@ -41,7 +41,7 @@ from costero_config import *
 CMEMS_USER = os.environ["CMEMS_USER"]
 CMEMS_PASS = os.environ["CMEMS_PASS"]
 CDS_KEY    = os.environ["CDS_KEY"]
-SHEET_ID   = os.environ["COSTERO_SHEET_ID"]
+SHEET_ID   = "1e2qg6rnEEAlfwDq0wUItv8szgH6uIntiW155FUFAaUU"
 GOOGLE_SA  = os.environ["GOOGLE_SA_JSON"]
 
 with open(os.path.expanduser("~/.cdsapirc"), "w") as f:
