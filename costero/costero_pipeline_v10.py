@@ -1,21 +1,17 @@
 # ================================================================
-# PredictaMAR Costero v1.1 -- PIPELINE COMPLETO
+# PredictaMAR Costero v1.2 -- PIPELINE SECTORIZACION TACTICA
 # Puerto Chorrillos - 0-20 km - Sistema Corriente de Humboldt
 #
-# Cadena trofica temporal:
-#   surgencia(T-7d, SST+viento) -> bloom(T-4d, S2) -> cardumen(hoy)
-#
-# Variables score base (pesos adaptativos horizontales):
-#   SST gradiente 18% | ERA5 viento 12% | S2 bloom 15%
-#   S1 SAR 15% | ALOS-2 10% | Batimetria 15% | Geometria costera 15%
-#
-# Moduladores externos (fuera del score base):
-#   Oleaje: kill-switch SWH>1.5m + penalizacion mezcla
-#   Corrientes: adveccion posicion proyectada T8h y T16h
-#
-# CORRECCIONES v1.1:
-#   - Score: multiplicadores SST y viento ahora son aditivos (no multiplicativos)
-#   - Adveccion: corregida formula de timestamp para lat_T16/lon_T16
+# Cambios v1.2:
+#   - 4 sectores geograficos: Costero, Norte, Sur, Oeste
+#   - Z-score local por sector (normalizacion relativa)
+#   - Top 5 por sector con roles tacticos:
+#       Punto 1: nucleo del frente (max score local)
+#       Puntos 2-3: variantes del frente (min 500m de separacion)
+#       Puntos 4-5: trampas estaticas moduladas por condiciones
+#   - Total: hasta 20 puntos distribuidos en 4 sectores
+#   - Score correcto: contribuciones aditivas acotadas [0,1]
+#   - Adveccion corregida: coordenadas reales T8h y T16h
 # ================================================================
 
 import sys, os, json
@@ -33,7 +29,7 @@ import warnings
 warnings.filterwarnings('ignore')
 
 print("=" * 60)
-print("PredictaMAR Costero v1.1 -- PIPELINE COMPLETO")
+print("PredictaMAR Costero v1.2 -- SECTORIZACION TACTICA")
 print(f"Inicio: {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}")
 print("=" * 60)
 sys.stdout.flush()
@@ -86,6 +82,49 @@ def dist_km(lat1, lon1, lat2, lon2):
     dlat = (lat2 - lat1) * 111.0
     dlon = (lon2 - lon1) * 111.0 * np.cos(np.radians((lat1 + lat2) / 2))
     return float(np.sqrt(dlat**2 + dlon**2))
+
+# ================================================================
+# SECTORIZACION GEOGRAFICA DE CHORRILLOS
+# Basada en morfologia costera y experiencia operacional
+#
+# Sector COSTERO: 0-3 km -- rompiente, pejerrey de orilla
+# Sector NORTE:   3-15 km al norte -- frente a Miraflores
+# Sector SUR:     3-20 km al sur -- sotavento Morro Solar
+# Sector OESTE:   12-20 km -- aguas abiertas HCS
+#
+# La sectorizacion usa distancia + angulo desde el muelle
+# ================================================================
+def asignar_sector(lat, lon, dist):
+    """
+    Asigna sector geografico basado en posicion respecto al muelle.
+    Muelle Chorrillos: -12.157, -77.021
+    Norte de Lima (Miraflores): latitudes menores (mas negativas en valor)
+    Sur (Morro Solar, Lurin): latitudes mayores
+    """
+    # Angulo desde el muelle
+    dlat = lat - LAT_CHORRILLOS
+    dlon = lon - LON_CHORRILLOS
+
+    # Sector costero inmediato
+    if dist <= 3.0:
+        return "COSTERO"
+
+    # Norte: hacia Miraflores (lat mas al norte = valor menos negativo)
+    if dlat > 0.02:  # mas de ~2 km al norte del muelle
+        return "NORTE"
+
+    # Sur: hacia Morro Solar y Lurin (lat mas al sur = valor mas negativo)
+    if dlat < -0.02:  # mas de ~2 km al sur del muelle
+        return "SUR"
+
+    # Oeste: aguas abiertas (lejos de la costa)
+    if dist > 12.0:
+        return "OESTE"
+
+    # Zona intermedia -- asignar por predominancia
+    if abs(dlat) > abs(dlon):
+        return "SUR" if dlat < 0 else "NORTE"
+    return "OESTE"
 
 # ================================================================
 # FUENTE 1 -- SST L4 CMEMS (surgencia T-7d)
@@ -170,7 +209,7 @@ print("\n[3/8] Oleaje -- condicion del mar...")
 OLEAJE_DISPONIBLE   = False
 swh_medio           = 0.8
 kill_switch_activo  = False
-penalizacion_mezcla = 0.0   # contribucion aditiva al score final (0 a 0.1 max)
+penalizacion_mezcla = 0.0
 
 try:
     fecha_ola_ini = (FECHA_HOY - timedelta(days=1)).strftime("%Y-%m-%d")
@@ -193,9 +232,8 @@ try:
                 kill_switch_activo = True
                 print(f"  OLEAJE ADVERSO -- SWH: {swh_medio:.2f}m -- KILL SWITCH")
             else:
-                # Penalizacion aditiva: oleaje alto resta hasta 0.10 del score
                 penalizacion_mezcla = -float(np.clip((swh_medio / SWH_MEZCLA_MAX) * 0.10, 0, 0.10))
-                print(f"  Oleaje OK -- SWH: {swh_medio:.2f}m | pen_mezcla: {penalizacion_mezcla:.3f}")
+                print(f"  Oleaje OK -- SWH: {swh_medio:.2f}m | pen: {penalizacion_mezcla:.3f}")
     else:
         print("  Oleaje sin imagen reciente")
 except Exception as e:
@@ -240,7 +278,7 @@ except Exception as e:
 sys.stdout.flush()
 
 # ================================================================
-# FUENTE 5 -- SENTINEL-2 (bloom T-4d)
+# FUENTE 5 -- SENTINEL-2 (bloom T-4d, solo cielo despejado)
 # ================================================================
 print("\n[5/8] Sentinel-2 -- bloom T-4d...")
 S2_DISPONIBLE    = False
@@ -390,66 +428,83 @@ CONFIANZA = "ALTA" if n_bio >= 2 and n_fis >= 2 else "MEDIA" if n_bio >= 1 or n_
 
 print(f"  Bio: {n_bio} | Fisico: {n_fis} | Confianza: {CONFIANZA}")
 print(f"  Pesos: {', '.join([f'{k[:6]}:{v:.2f}' for k, v in W_activos.items()])}")
-if kill_switch_activo:
-    print(f"  KILL SWITCH ACTIVO -- SWH {swh_medio:.2f}m")
 sys.stdout.flush()
 
-# ================================================================
-# CONTRIBUCIONES BIOLOGICAS ESCALARES
-# Correccion Bug 1: SST y viento ahora son contribuciones ADITIVAS
-# controladas (max 0.10 cada una), no multiplicadores sobre el score base.
-# Esto evita que el score supere 1.0.
-# ================================================================
-# SST gradiente: contribucion aditiva entre 0 y 0.10
+# -- Contribuciones biologicas escalares aditivas (max 0.10 cada una)
 contrib_sst    = float(np.clip(sst_grad_medio * 0.10, 0, 0.10)) if SST_DISPONIBLE else 0.0
-# Viento surgencia: contribucion aditiva entre 0 y 0.10
 contrib_viento = float(np.clip(indice_surgencia * 0.10, 0, 0.10)) if ERA5_DISPONIBLE else 0.0
 
-print(f"  Contrib SST: +{contrib_sst:.3f} | Contrib viento: +{contrib_viento:.3f} | Pen oleaje: {penalizacion_mezcla:.3f}")
+# -- Modificador de trampas estaticas segun condiciones dinamicas
+# Si hay surgencia activa, las zonas de retencion geometrica se potencian
+bonus_trampa = 0.0
+if SST_DISPONIBLE and ERA5_DISPONIBLE:
+    if indice_surgencia >= 0.70 and sst_grad_medio >= 0.40:
+        bonus_trampa = 0.08   # Surgencia alta + gradiente termico = trampas activas
+    elif indice_surgencia >= 0.50:
+        bonus_trampa = 0.04   # Surgencia moderada
+print(f"  Contrib SST: +{contrib_sst:.3f} | Contrib viento: +{contrib_viento:.3f} | Bonus trampa: +{bonus_trampa:.3f}")
 sys.stdout.flush()
 
 # ================================================================
-# CALCULO DEL MICROSCORE
+# CALCULO DEL MICROSCORE CON GRILLA VARIABLE
+# Zona costera 0-3 km: paso 0.0009 grados (~100m)
+# Zona media 3-10 km:  paso 0.0027 grados (~300m)
+# Zona abierta 10-20km: paso 0.0045 grados (~500m)
 # ================================================================
-print("\nCalculando MicroScore...")
+print("\nGenerando grilla variable...")
 
-lats = np.arange(LAT_MIN_C, LAT_MAX_C, 0.0045)
-lons = np.arange(LON_MIN_C, LON_MAX_C, 0.0045)
-grid_lats, grid_lons = np.meshgrid(lats, lons, indexing='ij')
-puntos_flat = [(float(la), float(lo))
-               for la, lo in zip(grid_lats.ravel(), grid_lons.ravel())]
+puntos_flat = []
+# Grilla densa costera
+lats_c = np.arange(LAT_MIN_C, LAT_MAX_C, 0.0009)
+lons_c = np.arange(LON_MIN_C, LON_MAX_C, 0.0009)
+for la in lats_c:
+    for lo in lons_c:
+        d = dist_km(LAT_CHORRILLOS, LON_CHORRILLOS, float(la), float(lo))
+        if d <= 3.0 and d >= RADIO_ORILLA_KM:
+            puntos_flat.append((float(la), float(lo), d))
+
+# Grilla media
+lats_m = np.arange(LAT_MIN_C, LAT_MAX_C, 0.0027)
+lons_m = np.arange(LON_MIN_C, LON_MAX_C, 0.0027)
+for la in lats_m:
+    for lo in lons_m:
+        d = dist_km(LAT_CHORRILLOS, LON_CHORRILLOS, float(la), float(lo))
+        if d > 3.0 and d <= 10.0:
+            puntos_flat.append((float(la), float(lo), d))
+
+# Grilla abierta
+lats_a = np.arange(LAT_MIN_C, LAT_MAX_C, 0.0045)
+lons_a = np.arange(LON_MIN_C, LON_MAX_C, 0.0045)
+for la in lats_a:
+    for lo in lons_a:
+        d = dist_km(LAT_CHORRILLOS, LON_CHORRILLOS, float(la), float(lo))
+        if d > 10.0 and d <= RADIO_MAX_KM:
+            puntos_flat.append((float(la), float(lo), d))
+
+print(f"  Puntos en grilla: {len(puntos_flat)} (costero + medio + abierto)")
+sys.stdout.flush()
 
 def adveccion_punto(lat, lon, horas):
-    """
-    Proyecta posicion usando corrientes superficiales CMEMS.
-    Corrientes HCS costeras tipicas: 5-15 cm/s
-    Desplazamiento en 8h: 1.5-4 km (dentro del radio 0-20km)
-    Nota: aproximacion con corrientes CMEMS 9km -- valida para
-    direccion general, no posicion exacta.
-    Correccion Bug 2: formula en metros/segundo * segundos / metros_por_grado
-    """
     if not CORRIENTES_DISPONIBLE:
         return round(float(lat), 4), round(float(lon), 4)
     segundos = float(horas) * 3600.0
     dlat = (float(vo_medio) * segundos) / 111000.0
     dlon = (float(uo_medio) * segundos) / (111000.0 * float(np.cos(np.radians(float(lat)))))
-    lat_new = round(float(lat) + dlat, 4)
-    lon_new = round(float(lon) + dlon, 4)
-    return lat_new, lon_new
+    return round(float(lat) + dlat, 4), round(float(lon) + dlon, 4)
 
-print(f"  Evaluando {len(puntos_flat)} puntos...")
+# ================================================================
+# CALCULO DEL SCORE POR BATCH
+# ================================================================
+print("\nCalculando MicroScore por sector...")
 resultados = []
 
-for i in range(0, min(len(puntos_flat), 500), 100):
+for i in range(0, min(len(puntos_flat), 800), 100):
     batch = puntos_flat[i:i+100]
     features = []
-    for lat, lon in batch:
-        d = dist_km(LAT_CHORRILLOS, LON_CHORRILLOS, lat, lon)
-        if d > RADIO_MAX_KM or d < RADIO_ORILLA_KM:
-            continue
+    for lat, lon, dist in batch:
         features.append(ee.Feature(
             ee.Geometry.Point([lon, lat]),
-            {'lat': lat, 'lon': lon, 'dist_km': d}
+            {'lat': lat, 'lon': lon, 'dist_km': dist}
         ))
     if not features:
         continue
@@ -471,9 +526,8 @@ for i in range(0, min(len(puntos_flat), 500), 100):
         if not capas:
             continue
 
-        # Forzar mismo tipo Float32 en todas las capas antes de combinar
         capas_norm = [c.toFloat().rename('score') for c in capas]
-        score_img = ee.ImageCollection(capas_norm).sum().rename('score')
+        score_img  = ee.ImageCollection(capas_norm).sum().rename('score')
         res = score_img.reduceRegions(
             collection = fc,
             reducer    = ee.Reducer.mean(),
@@ -486,11 +540,10 @@ for i in range(0, min(len(puntos_flat), 500), 100):
                 lat_p      = float(p['lat'])
                 lon_p      = float(p['lon'])
                 score_base = float(p['mean'])
+                sector     = asignar_sector(lat_p, lon_p, float(p['dist_km']))
 
-                # Score final: base + contribuciones aditivas biologicas
-                # Cada contribucion esta acotada a 0.10 maximo
-                # El score final no puede superar 1.0 ni bajar de 0.0
-                score_final = float(np.clip(
+                # Score absoluto: base + contribuciones aditivas biologicas
+                score_abs = float(np.clip(
                     score_base + contrib_sst + contrib_viento + penalizacion_mezcla,
                     0.0, 1.0
                 ))
@@ -500,28 +553,24 @@ for i in range(0, min(len(puntos_flat), 500), 100):
                 lat_16h, lon_16h = adveccion_punto(lat_p, lon_p, ADV_HORAS_T16)
                 dist_16h = dist_km(LAT_CHORRILLOS, LON_CHORRILLOS, lat_16h, lon_16h)
                 desp_km  = dist_km(lat_p, lon_p, lat_16h, lon_16h)
-
-                # Direccion del desplazamiento
-                angulo  = float(np.degrees(np.arctan2(lon_16h - lon_p, lat_16h - lat_p)))
-                dirs    = ["N","NE","E","SE","S","SO","O","NO"]
-                dir_txt = dirs[int((angulo + 22.5) / 45) % 8]
+                angulo   = float(np.degrees(np.arctan2(lon_16h - lon_p, lat_16h - lat_p)))
+                dirs     = ["N","NE","E","SE","S","SO","O","NO"]
+                dir_txt  = dirs[int((angulo + 22.5) / 45) % 8]
 
                 resultados.append({
-                    'lat':         lat_p,
-                    'lon':         lon_p,
-                    'dist_km':     round(float(p['dist_km']), 1),
-                    'score':       round(score_final, 4),
-                    'score_base':  round(score_base, 4),
-                    'contrib_sst': round(contrib_sst, 4),
-                    'contrib_viento': round(contrib_viento, 4),
-                    'pen_mezcla':  round(penalizacion_mezcla, 4),
-                    'lat_T8':      lat_8h,
-                    'lon_T8':      lon_8h,
-                    'lat_T16':     lat_16h,
-                    'lon_T16':     lon_16h,
-                    'dist_T16':    round(dist_16h, 1),
-                    'desp_km':     round(desp_km, 2),
-                    'direccion':   dir_txt,
+                    'lat':          lat_p,
+                    'lon':          lon_p,
+                    'dist_km':      round(float(p['dist_km']), 1),
+                    'sector':       sector,
+                    'score_abs':    round(score_abs, 4),
+                    'score_base':   round(score_base, 4),
+                    'lat_T8':       lat_8h,
+                    'lon_T8':       lon_8h,
+                    'lat_T16':      lat_16h,
+                    'lon_T16':      lon_16h,
+                    'dist_T16':     round(dist_16h, 1),
+                    'desp_km':      round(desp_km, 2),
+                    'direccion':    dir_txt,
                 })
     except Exception as e:
         print(f"  Batch {i} error: {e}")
@@ -531,31 +580,124 @@ print(f"  Puntos con score: {len(resultados)}")
 sys.stdout.flush()
 
 # ================================================================
-# EXPORTAR REPORTE
+# Z-SCORE LOCAL POR SECTOR + SELECCION TOP 5 TACTICO
 # ================================================================
-print("\nExportando reporte...")
+print("\nAplicando Z-score local por sector...")
 
 if not resultados:
     print("Sin resultados -- pipeline termina sin exportar")
     sys.exit(0)
 
-df = pd.DataFrame(resultados).sort_values('score', ascending=False).reset_index(drop=True)
+df = pd.DataFrame(resultados)
 
-def get_semaforo(score, kill_switch):
+# Z-score local: normaliza dentro de cada sector
+for sector in df['sector'].unique():
+    mask = df['sector'] == sector
+    mu   = df.loc[mask, 'score_abs'].mean()
+    sig  = df.loc[mask, 'score_abs'].std() + 1e-6
+    df.loc[mask, 'z_score_local'] = (df.loc[mask, 'score_abs'] - mu) / sig
+
+# Normalizar z_score_local a [0,1] dentro de cada sector
+for sector in df['sector'].unique():
+    mask = df['sector'] == sector
+    z_min = df.loc[mask, 'z_score_local'].min()
+    z_max = df.loc[mask, 'z_score_local'].max()
+    rng   = z_max - z_min + 1e-9
+    df.loc[mask, 'score_local'] = ((df.loc[mask, 'z_score_local'] - z_min) / rng).clip(0, 1)
+
+# Semaforo local: siempre hay un VERDE LOCAL en cada sector
+def semaforo_local(score_local, score_abs, kill_switch):
+    if kill_switch:         return "ADVERSO"
+    if score_local >= 0.75: return "VERDE_LOCAL"
+    if score_local >= 0.45: return "AMARILLO_LOCAL"
+    return "ROJO_LOCAL"
+
+# Semaforo global: basado en score absoluto
+def semaforo_global(score_abs, kill_switch):
     if kill_switch:              return "ADVERSO"
-    if score >= UMBRAL_VERDE:    return "VERDE"
-    if score >= UMBRAL_AMARILLO: return "AMARILLO"
+    if score_abs >= UMBRAL_VERDE: return "VERDE"
+    if score_abs >= UMBRAL_AMARILLO: return "AMARILLO"
     return "ROJO"
 
-anillos = [(0,5),(5,10),(10,15),(15,20)]
-df_rep  = []
-for d_min, d_max in anillos:
-    anillo = df[(df['dist_km'] >= d_min) & (df['dist_km'] < d_max)].head(6)
-    df_rep.append(anillo)
-    print(f"  Anillo {d_min}-{d_max}km: {len(anillo)} zonas | score max: {anillo['score'].max():.3f}" if len(anillo) > 0 else f"  Anillo {d_min}-{d_max}km: 0 zonas")
+df['semaforo_local']  = df.apply(lambda r: semaforo_local(r['score_local'], r['score_abs'], kill_switch_activo), axis=1)
+df['semaforo_global'] = df.apply(lambda r: semaforo_global(r['score_abs'], kill_switch_activo), axis=1)
 
-df_rep = pd.concat(df_rep, ignore_index=True)
-df_rep['semaforo']         = df_rep['score'].apply(lambda s: get_semaforo(s, kill_switch_activo))
+# ================================================================
+# SELECCION TOP 5 TACTICO POR SECTOR
+# Punto 1: maximo score local (nucleo del frente)
+# Puntos 2-3: variantes del frente (min 500m de separacion)
+# Puntos 4-5: trampas estaticas moduladas (mayor geometria costera)
+# ================================================================
+print("\nSeleccionando Top 5 tactico por sector...")
+
+def seleccionar_top5(df_sector, sector_nombre, bonus_trampa_val):
+    if len(df_sector) == 0:
+        return pd.DataFrame()
+
+    seleccionados = []
+    df_ord = df_sector.sort_values('score_local', ascending=False).reset_index(drop=True)
+
+    # Punto 1: nucleo del frente
+    p1 = df_ord.iloc[0].copy()
+    p1['rol'] = "NUCLEO_FRENTE"
+    p1['rank_sector'] = 1
+    seleccionados.append(p1)
+
+    # Puntos 2 y 3: variantes con minimo 500m de separacion
+    usados = [(float(p1['lat']), float(p1['lon']))]
+    rank   = 2
+    for _, row in df_ord.iterrows():
+        if rank > 3:
+            break
+        dists_a_usados = [dist_km(float(row['lat']), float(row['lon']), u[0], u[1]) for u in usados]
+        if min(dists_a_usados) >= 0.5:
+            r = row.copy()
+            r['rol'] = f"VARIANTE_{rank-1}"
+            r['rank_sector'] = rank
+            seleccionados.append(r)
+            usados.append((float(row['lat']), float(row['lon'])))
+            rank += 1
+
+    # Puntos 4 y 5: trampas estaticas
+    # Buscar puntos con alta geometria costera + bonus de surgencia activa
+    # Aplicar bonus_trampa al score para que trampas suban cuando hay surgencia
+    df_trampas = df_sector.copy()
+    df_trampas['score_trampa'] = df_trampas['score_abs'] + bonus_trampa_val
+    df_trampas['score_trampa'] = df_trampas['score_trampa'].clip(0, 1)
+    df_trampas_ord = df_trampas.sort_values('score_trampa', ascending=False).reset_index(drop=True)
+
+    rank_t = 4
+    for _, row in df_trampas_ord.iterrows():
+        if rank_t > 5:
+            break
+        dists_a_usados = [dist_km(float(row['lat']), float(row['lon']), u[0], u[1]) for u in usados]
+        if min(dists_a_usados) >= 0.8:
+            r = row.copy()
+            r['rol'] = f"TRAMPA_{rank_t-3}"
+            r['rank_sector'] = rank_t
+            seleccionados.append(r)
+            usados.append((float(row['lat']), float(row['lon'])))
+            rank_t += 1
+
+    return pd.DataFrame(seleccionados)
+
+sectores_orden = ['COSTERO', 'SUR', 'NORTE', 'OESTE']
+df_rep_list = []
+
+for sector in sectores_orden:
+    df_sec = df[df['sector'] == sector].copy()
+    if len(df_sec) > 0:
+        top5 = seleccionar_top5(df_sec, sector, bonus_trampa)
+        print(f"  Sector {sector}: {len(df_sec)} puntos -> {len(top5)} seleccionados")
+        df_rep_list.append(top5)
+    else:
+        print(f"  Sector {sector}: sin puntos")
+
+if not df_rep_list:
+    print("Sin resultados por sector -- pipeline termina")
+    sys.exit(0)
+
+df_rep = pd.concat(df_rep_list, ignore_index=True)
 df_rep['confianza']        = CONFIANZA
 df_rep['fecha']            = FECHA_HOY_STR
 df_rep['hora_utc']         = datetime.utcnow().strftime("%Y-%m-%d %H:%M")
@@ -564,7 +706,6 @@ df_rep['sst_ok']           = SST_DISPONIBLE
 df_rep['s2_bloom_ok']      = S2_DISPONIBLE
 df_rep['era5_ok']          = ERA5_DISPONIBLE
 df_rep['corrientes_ok']    = CORRIENTES_DISPONIBLE
-df_rep['alos2_ok']         = ALOS2_DISPONIBLE
 df_rep['oleaje_ok']        = OLEAJE_DISPONIBLE
 df_rep['swh_medio']        = round(swh_medio, 2)
 df_rep['kill_switch']      = kill_switch_activo
@@ -572,6 +713,15 @@ df_rep['sst_temp_medio']   = round(sst_temp_medio, 2) if sst_temp_medio else Non
 df_rep['indice_surgencia'] = round(indice_surgencia, 3)
 df_rep['uo_medio']         = round(uo_medio, 5)
 df_rep['vo_medio']         = round(vo_medio, 5)
+df_rep['bonus_trampa']     = round(bonus_trampa, 3)
+
+print(f"\nTotal zonas reportadas: {len(df_rep)}")
+sys.stdout.flush()
+
+# ================================================================
+# EXPORTAR REPORTE
+# ================================================================
+print("\nExportando reporte...")
 
 try:
     ws = sh.worksheet('costero_reporte')
@@ -579,7 +729,7 @@ try:
 except:
     ws = sh.add_worksheet(title='costero_reporte', rows=200, cols=35)
 set_with_dataframe(ws, df_rep)
-print(f"Reporte exportado: {len(df_rep)} zonas")
+print(f"Reporte exportado: {len(df_rep)} zonas en {df_rep['sector'].nunique()} sectores")
 sys.stdout.flush()
 
 # ================================================================
@@ -594,9 +744,9 @@ except:
     ws_hist = sh.add_worksheet(title='costero_historial', rows=5000, cols=25)
     df_hist = pd.DataFrame()
 
-cols_h = ['lat','lon','dist_km','score','score_base','semaforo','confianza',
-          'fecha','hora_utc','s1_dias','sst_ok','s2_bloom_ok',
-          'era5_ok','swh_medio','kill_switch','indice_surgencia','direccion']
+cols_h = ['lat','lon','dist_km','sector','rol','rank_sector',
+          'score_abs','score_local','semaforo_local','semaforo_global',
+          'confianza','fecha','hora_utc','indice_surgencia','direccion']
 df_h_nuevo    = df_rep[[c for c in cols_h if c in df_rep.columns]].copy()
 df_hist_total = pd.concat([df_hist, df_h_nuevo], ignore_index=True) if len(df_hist) > 0 else df_h_nuevo
 fecha_limite  = (datetime.utcnow() - timedelta(days=HISTORIAL_DIAS)).strftime("%Y-%m-%d")
@@ -607,9 +757,9 @@ print(f"Historial: {len(df_hist_total)} registros")
 sys.stdout.flush()
 
 # ================================================================
-# IPO COSTERO diferenciado
+# IPO COSTERO diferenciado por sector
 # ================================================================
-print("\nCalculando IPO Costero...")
+print("\nCalculando IPO Costero por sector...")
 
 ipo_rows = []
 fecha_3d = (datetime.utcnow() - timedelta(days=IPO_DIAS_PELAGICOS)).strftime("%Y-%m-%d")
@@ -640,8 +790,12 @@ for _, zona in df_rep.iterrows():
     ipo_rows.append({
         'lat': lat_z, 'lon': lon_z,
         'dist_km': float(zona['dist_km']),
-        'score': float(zona['score']),
-        'score_base': float(zona['score_base']),
+        'sector': zona['sector'],
+        'rol': zona['rol'],
+        'rank_sector': int(zona['rank_sector']),
+        'score_abs': float(zona['score_abs']),
+        'score_local': round(float(zona['score_local']), 4),
+        'semaforo_local': zona['semaforo_local'],
         'lat_T16': float(zona['lat_T16']),
         'lon_T16': float(zona['lon_T16']),
         'desp_km': float(zona['desp_km']),
@@ -658,7 +812,7 @@ try:
     ws_ipo = sh.worksheet('costero_ipo')
     ws_ipo.clear()
 except:
-    ws_ipo = sh.add_worksheet(title='costero_ipo', rows=200, cols=15)
+    ws_ipo = sh.add_worksheet(title='costero_ipo', rows=200, cols=20)
 set_with_dataframe(ws_ipo, df_ipo)
 print(f"IPO: {len(df_ipo)} zonas")
 sys.stdout.flush()
@@ -667,19 +821,17 @@ sys.stdout.flush()
 # RESUMEN FINAL
 # ================================================================
 print("\n" + "=" * 60)
-print(f"PredictaMAR Costero v1.1 COMPLETO -- {FECHA_HOY_STR}")
+print(f"PredictaMAR Costero v1.2 COMPLETO -- {FECHA_HOY_STR}")
 print(f"Confianza: {CONFIANZA}")
-print(f"SST L4:      {'OK T=' + str(round(sst_temp_medio,1)) + 'C grad=' + str(round(sst_grad_medio,3)) if SST_DISPONIBLE else 'NO'}")
+print(f"SST L4:      {'OK T=' + str(round(sst_temp_medio,1)) if SST_DISPONIBLE else 'NO'}")
 print(f"ERA5:        {'OK ind=' + str(round(indice_surgencia,3)) if ERA5_DISPONIBLE else 'NO'}")
 print(f"S2 bloom:    {'OK Fc=' + str(round(Fc_s2,2)) if S2_DISPONIBLE else 'NO (nubosidad)'}")
-print(f"S1 SAR:      {'OK Fc=' + str(round(Fc_s1,2)) + ' ant=' + str(s1_ant) + 'd' if S1_DISPONIBLE else 'NO'}")
+print(f"S1 SAR:      {'OK Fc=' + str(round(Fc_s1,2)) if S1_DISPONIBLE else 'NO'}")
 print(f"ALOS-2:      {'OK Fc=' + str(round(Fc_alos2,2)) if ALOS2_DISPONIBLE else 'NO'}")
-print(f"Corrientes:  {'OK uo=' + str(round(uo_medio,4)) + ' vo=' + str(round(vo_medio,4)) if CORRIENTES_DISPONIBLE else 'NO'}")
-print(f"Oleaje:      {'ADVERSO SWH=' + str(round(swh_medio,2)) + 'm' if kill_switch_activo else 'OK SWH=' + str(round(swh_medio,2)) + 'm'}")
-print(f"Batimetria:  {'OK' if gebco_slope else 'NO'}")
-print(f"Geometria:   {'OK' if geometria_costera else 'NO'}")
-print(f"Contrib SST: +{contrib_sst:.3f} | Contrib viento: +{contrib_viento:.3f} | Pen mezcla: {penalizacion_mezcla:.3f}")
-print(f"Zonas reportadas: {len(df_rep)}")
+print(f"Oleaje:      {'ADVERSO SWH=' + str(round(swh_medio,2)) if kill_switch_activo else 'OK SWH=' + str(round(swh_medio,2)) + 'm'}")
+print(f"Bonus trampa: +{bonus_trampa:.3f}")
+print(f"Sectores: {df_rep['sector'].value_counts().to_dict()}")
+print(f"Total zonas: {len(df_rep)}")
 print(f"Fin: {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}")
 print("=" * 60)
 sys.stdout.flush()
