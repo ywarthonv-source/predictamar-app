@@ -459,19 +459,21 @@ for i in range(0, min(len(puntos_flat), 500), 100):
         capas = []
 
         if S1_DISPONIBLE and s1_norm:
-            capas.append(s1_norm.toFloat().clamp(0, 1).multiply(W_activos.get("s1_sar", 0)).rename('score'))
+            capas.append(s1_norm.toFloat().clamp(0, 1).multiply(float(W_activos.get("s1_sar", 0))))
         if ALOS2_DISPONIBLE and alos2_norm:
-            capas.append(alos2_norm.toFloat().clamp(0, 1).multiply(W_activos.get("alos2", 0)).rename('score'))
+            capas.append(alos2_norm.toFloat().clamp(0, 1).multiply(float(W_activos.get("alos2", 0))))
         if gebco_slope:
-            capas.append(gebco_slope.toFloat().unitScale(0, 30).clamp(0, 1).multiply(W_activos.get("batimetria", 0)).rename('score'))
+            capas.append(gebco_slope.toFloat().unitScale(0, 30).clamp(0, 1).multiply(float(W_activos.get("batimetria", 0))))
         if geometria_costera:
-            capas.append(geometria_costera.toFloat().clamp(0, 1).multiply(W_activos.get("geometria", 0)).rename('score'))
+            capas.append(geometria_costera.toFloat().clamp(0, 1).multiply(float(W_activos.get("geometria", 0))))
         if S2_DISPONIBLE and chl_bloom_imagen:
-            capas.append(chl_bloom_imagen.toFloat().unitScale(0.8, 1.5).clamp(0, 1).multiply(W_activos.get("chl_bloom", 0)).rename('score'))
+            capas.append(chl_bloom_imagen.toFloat().unitScale(0.8, 1.5).clamp(0, 1).multiply(float(W_activos.get("chl_bloom", 0))))
         if not capas:
             continue
 
-        score_img = ee.ImageCollection(capas).sum().rename('score')
+        # Forzar mismo tipo Float32 en todas las capas antes de combinar
+        capas_norm = [c.toFloat().rename('score') for c in capas]
+        score_img = ee.ImageCollection(capas_norm).sum().rename('score')
         res = score_img.reduceRegions(
             collection = fc,
             reducer    = ee.Reducer.mean(),
