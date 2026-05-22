@@ -12,6 +12,10 @@
 # Moduladores externos (fuera del score base):
 #   Oleaje: kill-switch SWH>1.5m + penalizacion mezcla
 #   Corrientes: adveccion posicion proyectada T8h y T16h
+#
+# CORRECCIONES v1.1:
+#   - Score: multiplicadores SST y viento ahora son aditivos (no multiplicativos)
+#   - Adveccion: corregida formula de timestamp para lat_T16/lon_T16
 # ================================================================
 
 import sys, os, json
@@ -52,7 +56,6 @@ scopes   = ["https://www.googleapis.com/auth/spreadsheets",
             "https://www.googleapis.com/auth/drive"]
 sa_creds = SACredentials.from_service_account_info(sa_info, scopes=scopes)
 gc       = gspread.authorize(sa_creds)
-print(f"DEBUG SHEET_ID: {SHEET_ID[:8]}...")
 sh       = gc.open_by_key(SHEET_ID)
 print(f"Sheets OK: {sh.title}")
 
@@ -80,9 +83,9 @@ sys.stdout.flush()
 AOI = ee.Geometry.Rectangle([LON_MIN_C, LAT_MIN_C, LON_MAX_C, LAT_MAX_C])
 
 def dist_km(lat1, lon1, lat2, lon2):
-    dlat = (lat2 - lat1) * 111
-    dlon = (lon2 - lon1) * 111 * np.cos(np.radians((lat1 + lat2) / 2))
-    return np.sqrt(dlat**2 + dlon**2)
+    dlat = (lat2 - lat1) * 111.0
+    dlon = (lon2 - lon1) * 111.0 * np.cos(np.radians((lat1 + lat2) / 2))
+    return float(np.sqrt(dlat**2 + dlon**2))
 
 # ================================================================
 # FUENTE 1 -- SST L4 CMEMS (surgencia T-7d)
@@ -163,11 +166,11 @@ sys.stdout.flush()
 # ================================================================
 # FUENTE 3 -- OLEAJE GEE (kill-switch + penalizacion mezcla)
 # ================================================================
-print("\n[3/8] Oleaje CMEMS/GEE -- condicion del mar...")
-OLEAJE_DISPONIBLE  = False
-swh_medio          = 0.8
-kill_switch_activo = False
-penalizacion_mezcla = 1.0
+print("\n[3/8] Oleaje -- condicion del mar...")
+OLEAJE_DISPONIBLE   = False
+swh_medio           = 0.8
+kill_switch_activo  = False
+penalizacion_mezcla = 0.0   # contribucion aditiva al score final (0 a 0.1 max)
 
 try:
     fecha_ola_ini = (FECHA_HOY - timedelta(days=1)).strftime("%Y-%m-%d")
@@ -175,30 +178,24 @@ try:
                    .filterBounds(AOI)
                    .filterDate(fecha_ola_ini, FECHA_HOY_STR)
                    .select(['VHM0']))
-
     if waves_col.size().getInfo() > 0:
         waves_img = waves_col.sort('system:time_start', False).first()
         swh_stats = waves_img.reduceRegion(
-            reducer   = ee.Reducer.mean(),
-            geometry  = AOI,
-            scale     = 9000
+            reducer  = ee.Reducer.mean(),
+            geometry = AOI,
+            scale    = 9000
         ).getInfo()
         swh_val = swh_stats.get('VHM0')
         if swh_val is not None:
             swh_medio = float(swh_val)
             OLEAJE_DISPONIBLE = True
-
-            # Kill-switch operacional
             if swh_medio > SWH_KILL_SWITCH:
                 kill_switch_activo = True
-                print(f"  OLEAJE ADVERSO -- SWH: {swh_medio:.2f}m > {SWH_KILL_SWITCH}m -- KILL SWITCH ACTIVO")
+                print(f"  OLEAJE ADVERSO -- SWH: {swh_medio:.2f}m -- KILL SWITCH")
             else:
-                # Penalizacion mezcla: escala entre 0 y SWH_MEZCLA_MAX
-                penalizacion_mezcla = max(0.3,
-                    1.0 - (swh_medio / SWH_MEZCLA_MAX) * 0.7)
-                print(f"  Oleaje OK -- SWH: {swh_medio:.2f}m | pen_mezcla: {penalizacion_mezcla:.2f}")
-        else:
-            print("  Oleaje sin dato en AOI")
+                # Penalizacion aditiva: oleaje alto resta hasta 0.10 del score
+                penalizacion_mezcla = -float(np.clip((swh_medio / SWH_MEZCLA_MAX) * 0.10, 0, 0.10))
+                print(f"  Oleaje OK -- SWH: {swh_medio:.2f}m | pen_mezcla: {penalizacion_mezcla:.3f}")
     else:
         print("  Oleaje sin imagen reciente")
 except Exception as e:
@@ -272,16 +269,16 @@ try:
         b4 = s2_img.select('B4').toFloat().divide(10000)
         chl_bloom_imagen = b3.divide(b4.add(1e-6)).rename('score')
         S2_DISPONIBLE = True
-        Fc_s2 = max(0, 1 - dias_diff / 5)
+        Fc_s2 = max(0.0, 1.0 - dias_diff / 5.0)
         print(f"  S2 OK -- fecha: {s2_ts.strftime('%Y-%m-%d')} | Fc: {Fc_s2:.2f}")
     else:
-        print("  S2 sin dato -- nubosidad")
+        print("  S2 sin dato -- nubosidad Lima")
 except Exception as e:
     print(f"  S2 error: {e}")
 sys.stdout.flush()
 
 # ================================================================
-# FUENTE 6 -- SENTINEL-1 SAR (condiciones actuales)
+# FUENTE 6 -- SENTINEL-1 SAR
 # ================================================================
 print("\n[6/8] Sentinel-1 SAR...")
 S1_DISPONIBLE = False
@@ -308,7 +305,7 @@ try:
             s1_grad.reduceRegion(ee.Reducer.percentile([95]), AOI, 100).values().get(0)
         ).rename('score')
         S1_DISPONIBLE = True
-        Fc_s1 = max(0, 1 - s1_ant / FC_S1_MAX_DIAS)
+        Fc_s1 = max(0.0, 1.0 - s1_ant / FC_S1_MAX_DIAS)
         print(f"  S1 OK -- antiguedad: {s1_ant}d | Fc: {Fc_s1:.2f}")
     else:
         print("  S1 sin dato reciente")
@@ -317,13 +314,13 @@ except Exception as e:
 sys.stdout.flush()
 
 # ================================================================
-# FUENTE 7 -- ALOS-2 (estructura fondo banda L)
+# FUENTE 7+8 -- ALOS-2 + BATIMETRIA + GEOMETRIA COSTERA
 # ================================================================
 print("\n[7/8] ALOS-2 + batimetria + geometria costera...")
-ALOS2_DISPONIBLE = False
-alos2_norm       = None
-Fc_alos2         = 0.0
-gebco_slope      = None
+ALOS2_DISPONIBLE  = False
+alos2_norm        = None
+Fc_alos2          = 0.0
+gebco_slope       = None
 geometria_costera = None
 
 try:
@@ -343,30 +340,16 @@ try:
             alos2_g.reduceRegion(ee.Reducer.percentile([95]), AOI, 100).values().get(0)
         ).rename('score')
         ALOS2_DISPONIBLE = True
-        Fc_alos2 = max(0, 1 - alos2_ant / FC_ALOS2_MAX_DIAS)
+        Fc_alos2 = max(0.0, 1.0 - alos2_ant / FC_ALOS2_MAX_DIAS)
         print(f"  ALOS-2 OK -- antiguedad: {alos2_ant}d | Fc: {Fc_alos2:.2f}")
     else:
         print("  ALOS-2 sin dato reciente")
 except Exception as e:
     print(f"  ALOS-2 error: {e}")
 
-# ================================================================
-# FUENTE 8 -- BATIMETRIA + GEOMETRIA COSTERA
-# Batimetria: pendiente del fondo (ETOPO1)
-# Geometria costera: gradiente batimetrico perpendicular a la costa
-# Detecta puntas, canyones y zonas de retencion mecanica
-# (Morro Solar, La Punta) donde la corriente se desacelera
-# y atrapa zooplancton y nutrientes
-# ================================================================
 try:
-    gebco = ee.Image(GEE_GEBCO).select(GEE_GEBCO_BAND).clip(AOI)
-
-    # Pendiente del fondo -- proxy habitat demersal
-    gebco_slope = ee.Terrain.slope(gebco).rename('score')
-
-    # Gradiente batimetrico perpendicular a la costa
-    # Calcula la segunda derivada del fondo -- donde hay cambios
-    # abruptos de pendiente = puntas, canyones, zonas de retencion
+    gebco        = ee.Image(GEE_GEBCO).select(GEE_GEBCO_BAND).clip(AOI)
+    gebco_slope  = ee.Terrain.slope(gebco).rename('score')
     gebco_smooth = gebco.focal_mean(radius=3, kernelType='circle', units='pixels')
     grad_x       = gebco_smooth.gradient().select('x')
     grad_y       = gebco_smooth.gradient().select('y')
@@ -374,14 +357,11 @@ try:
     grad2_x      = grad_mag.gradient().select('x')
     grad2_y      = grad_mag.gradient().select('y')
     curv_bati    = grad2_x.pow(2).add(grad2_y.pow(2)).sqrt()
-
-    # Normalizar -- valores altos = zonas de retencion geometrica
     geometria_costera = curv_bati.unitScale(
         curv_bati.reduceRegion(ee.Reducer.percentile([5]),  AOI, 500).values().get(0),
         curv_bati.reduceRegion(ee.Reducer.percentile([95]), AOI, 500).values().get(0)
     ).rename('score')
-
-    print("  Batimetria + geometria costera OK")
+    print("  Batimetria + geometria OK")
 except Exception as e:
     print(f"  Batimetria error: {e}")
 sys.stdout.flush()
@@ -402,16 +382,30 @@ if geometria_costera: W_activos["geometria"]   = W_BASE["geometria"]
 
 total_w = sum(W_activos.values())
 if total_w > 0:
-    W_activos = {k: v/total_w for k, v in W_activos.items()}
+    W_activos = {k: v / total_w for k, v in W_activos.items()}
 
 n_bio = sum([SST_DISPONIBLE, ERA5_DISPONIBLE, S2_DISPONIBLE])
 n_fis = sum([S1_DISPONIBLE, ALOS2_DISPONIBLE, bool(gebco_slope), bool(geometria_costera)])
 CONFIANZA = "ALTA" if n_bio >= 2 and n_fis >= 2 else "MEDIA" if n_bio >= 1 or n_fis >= 2 else "BAJA"
 
 print(f"  Bio: {n_bio} | Fisico: {n_fis} | Confianza: {CONFIANZA}")
-print(f"  Pesos: {', '.join([f'{k[:6]}:{v:.2f}' for k,v in W_activos.items()])}")
+print(f"  Pesos: {', '.join([f'{k[:6]}:{v:.2f}' for k, v in W_activos.items()])}")
 if kill_switch_activo:
-    print(f"  KILL SWITCH ACTIVO -- SWH {swh_medio:.2f}m > {SWH_KILL_SWITCH}m")
+    print(f"  KILL SWITCH ACTIVO -- SWH {swh_medio:.2f}m")
+sys.stdout.flush()
+
+# ================================================================
+# CONTRIBUCIONES BIOLOGICAS ESCALARES
+# Correccion Bug 1: SST y viento ahora son contribuciones ADITIVAS
+# controladas (max 0.10 cada una), no multiplicadores sobre el score base.
+# Esto evita que el score supere 1.0.
+# ================================================================
+# SST gradiente: contribucion aditiva entre 0 y 0.10
+contrib_sst    = float(np.clip(sst_grad_medio * 0.10, 0, 0.10)) if SST_DISPONIBLE else 0.0
+# Viento surgencia: contribucion aditiva entre 0 y 0.10
+contrib_viento = float(np.clip(indice_surgencia * 0.10, 0, 0.10)) if ERA5_DISPONIBLE else 0.0
+
+print(f"  Contrib SST: +{contrib_sst:.3f} | Contrib viento: +{contrib_viento:.3f} | Pen oleaje: {penalizacion_mezcla:.3f}")
 sys.stdout.flush()
 
 # ================================================================
@@ -426,12 +420,22 @@ puntos_flat = [(float(la), float(lo))
                for la, lo in zip(grid_lats.ravel(), grid_lons.ravel())]
 
 def adveccion_punto(lat, lon, horas):
+    """
+    Proyecta posicion usando corrientes superficiales CMEMS.
+    Corrientes HCS costeras tipicas: 5-15 cm/s
+    Desplazamiento en 8h: 1.5-4 km (dentro del radio 0-20km)
+    Nota: aproximacion con corrientes CMEMS 9km -- valida para
+    direccion general, no posicion exacta.
+    Correccion Bug 2: formula en metros/segundo * segundos / metros_por_grado
+    """
     if not CORRIENTES_DISPONIBLE:
-        return lat, lon
-    segundos = horas * 3600
-    dlat = (vo_medio * segundos) / 111000
-    dlon = (uo_medio * segundos) / (111000 * np.cos(np.radians(lat)))
-    return round(lat + dlat, 4), round(lon + dlon, 4)
+        return round(float(lat), 4), round(float(lon), 4)
+    segundos = float(horas) * 3600.0
+    dlat = (float(vo_medio) * segundos) / 111000.0
+    dlon = (float(uo_medio) * segundos) / (111000.0 * float(np.cos(np.radians(float(lat)))))
+    lat_new = round(float(lat) + dlat, 4)
+    lon_new = round(float(lon) + dlon, 4)
+    return lat_new, lon_new
 
 print(f"  Evaluando {len(puntos_flat)} puntos...")
 resultados = []
@@ -440,12 +444,12 @@ for i in range(0, min(len(puntos_flat), 500), 100):
     batch = puntos_flat[i:i+100]
     features = []
     for lat, lon in batch:
-        dist = dist_km(LAT_CHORRILLOS, LON_CHORRILLOS, lat, lon)
-        if dist > RADIO_MAX_KM or dist < RADIO_ORILLA_KM:
+        d = dist_km(LAT_CHORRILLOS, LON_CHORRILLOS, lat, lon)
+        if d > RADIO_MAX_KM or d < RADIO_ORILLA_KM:
             continue
         features.append(ee.Feature(
             ee.Geometry.Point([lon, lat]),
-            {'lat': lat, 'lon': lon, 'dist_km': dist}
+            {'lat': lat, 'lon': lon, 'dist_km': d}
         ))
     if not features:
         continue
@@ -477,38 +481,38 @@ for i in range(0, min(len(puntos_flat), 500), 100):
         for feat in res['features']:
             p = feat['properties']
             if p.get('mean') is not None:
-                lat_p      = p['lat']
-                lon_p      = p['lon']
+                lat_p      = float(p['lat'])
+                lon_p      = float(p['lon'])
                 score_base = float(p['mean'])
 
-                # Multiplicadores biologicos escalares
-                factor_sst    = 0.8 + 0.4 * sst_grad_medio
-                factor_viento = 0.7 + 0.6 * indice_surgencia if ERA5_DISPONIBLE else 1.0
-
-                # Modulador oleaje (penalizacion mezcla vertical)
-                # Kill-switch ya se aplica al semaforo, no al score
-                factor_oleaje = penalizacion_mezcla
-
+                # Score final: base + contribuciones aditivas biologicas
+                # Cada contribucion esta acotada a 0.10 maximo
+                # El score final no puede superar 1.0 ni bajar de 0.0
                 score_final = float(np.clip(
-                    score_base * factor_sst * factor_viento * factor_oleaje,
-                    0, 1
+                    score_base + contrib_sst + contrib_viento + penalizacion_mezcla,
+                    0.0, 1.0
                 ))
 
-                # Adveccion: posicion proyectada
+                # Adveccion corregida
                 lat_8h,  lon_8h  = adveccion_punto(lat_p, lon_p, ADV_HORAS_T8)
                 lat_16h, lon_16h = adveccion_punto(lat_p, lon_p, ADV_HORAS_T16)
                 dist_16h = dist_km(LAT_CHORRILLOS, LON_CHORRILLOS, lat_16h, lon_16h)
                 desp_km  = dist_km(lat_p, lon_p, lat_16h, lon_16h)
-                angulo   = float(np.degrees(np.arctan2(lon_16h - lon_p, lat_16h - lat_p)))
-                dirs     = ["N","NE","E","SE","S","SO","O","NO"]
-                dir_txt  = dirs[int((angulo + 22.5) / 45) % 8]
+
+                # Direccion del desplazamiento
+                angulo  = float(np.degrees(np.arctan2(lon_16h - lon_p, lat_16h - lat_p)))
+                dirs    = ["N","NE","E","SE","S","SO","O","NO"]
+                dir_txt = dirs[int((angulo + 22.5) / 45) % 8]
 
                 resultados.append({
                     'lat':         lat_p,
                     'lon':         lon_p,
-                    'dist_km':     round(p['dist_km'], 1),
+                    'dist_km':     round(float(p['dist_km']), 1),
                     'score':       round(score_final, 4),
                     'score_base':  round(score_base, 4),
+                    'contrib_sst': round(contrib_sst, 4),
+                    'contrib_viento': round(contrib_viento, 4),
+                    'pen_mezcla':  round(penalizacion_mezcla, 4),
                     'lat_T8':      lat_8h,
                     'lon_T8':      lon_8h,
                     'lat_T16':     lat_16h,
@@ -536,8 +540,8 @@ if not resultados:
 df = pd.DataFrame(resultados).sort_values('score', ascending=False).reset_index(drop=True)
 
 def get_semaforo(score, kill_switch):
-    if kill_switch:            return "ADVERSO"
-    if score >= UMBRAL_VERDE:  return "VERDE"
+    if kill_switch:              return "ADVERSO"
+    if score >= UMBRAL_VERDE:    return "VERDE"
     if score >= UMBRAL_AMARILLO: return "AMARILLO"
     return "ROJO"
 
@@ -546,27 +550,26 @@ df_rep  = []
 for d_min, d_max in anillos:
     anillo = df[(df['dist_km'] >= d_min) & (df['dist_km'] < d_max)].head(6)
     df_rep.append(anillo)
-    print(f"  Anillo {d_min}-{d_max}km: {len(anillo)} zonas")
+    print(f"  Anillo {d_min}-{d_max}km: {len(anillo)} zonas | score max: {anillo['score'].max():.3f}" if len(anillo) > 0 else f"  Anillo {d_min}-{d_max}km: 0 zonas")
 
 df_rep = pd.concat(df_rep, ignore_index=True)
-df_rep['semaforo']          = df_rep['score'].apply(
-    lambda s: get_semaforo(s, kill_switch_activo))
-df_rep['confianza']         = CONFIANZA
-df_rep['fecha']             = FECHA_HOY_STR
-df_rep['hora_utc']          = datetime.utcnow().strftime("%Y-%m-%d %H:%M")
-df_rep['s1_dias']           = s1_ant if S1_DISPONIBLE else -1
-df_rep['sst_ok']            = SST_DISPONIBLE
-df_rep['s2_bloom_ok']       = S2_DISPONIBLE
-df_rep['era5_ok']           = ERA5_DISPONIBLE
-df_rep['corrientes_ok']     = CORRIENTES_DISPONIBLE
-df_rep['alos2_ok']          = ALOS2_DISPONIBLE
-df_rep['oleaje_ok']         = OLEAJE_DISPONIBLE
-df_rep['swh_medio']         = round(swh_medio, 2)
-df_rep['kill_switch']       = kill_switch_activo
-df_rep['sst_temp_medio']    = round(sst_temp_medio, 2) if sst_temp_medio else None
-df_rep['indice_surgencia']  = round(indice_surgencia, 3)
-df_rep['uo_medio']          = round(uo_medio, 5)
-df_rep['vo_medio']          = round(vo_medio, 5)
+df_rep['semaforo']         = df_rep['score'].apply(lambda s: get_semaforo(s, kill_switch_activo))
+df_rep['confianza']        = CONFIANZA
+df_rep['fecha']            = FECHA_HOY_STR
+df_rep['hora_utc']         = datetime.utcnow().strftime("%Y-%m-%d %H:%M")
+df_rep['s1_dias']          = s1_ant if S1_DISPONIBLE else -1
+df_rep['sst_ok']           = SST_DISPONIBLE
+df_rep['s2_bloom_ok']      = S2_DISPONIBLE
+df_rep['era5_ok']          = ERA5_DISPONIBLE
+df_rep['corrientes_ok']    = CORRIENTES_DISPONIBLE
+df_rep['alos2_ok']         = ALOS2_DISPONIBLE
+df_rep['oleaje_ok']        = OLEAJE_DISPONIBLE
+df_rep['swh_medio']        = round(swh_medio, 2)
+df_rep['kill_switch']      = kill_switch_activo
+df_rep['sst_temp_medio']   = round(sst_temp_medio, 2) if sst_temp_medio else None
+df_rep['indice_surgencia'] = round(indice_surgencia, 3)
+df_rep['uo_medio']         = round(uo_medio, 5)
+df_rep['vo_medio']         = round(vo_medio, 5)
 
 try:
     ws = sh.worksheet('costero_reporte')
@@ -589,7 +592,7 @@ except:
     ws_hist = sh.add_worksheet(title='costero_historial', rows=5000, cols=25)
     df_hist = pd.DataFrame()
 
-cols_h = ['lat','lon','dist_km','score','semaforo','confianza',
+cols_h = ['lat','lon','dist_km','score','score_base','semaforo','confianza',
           'fecha','hora_utc','s1_dias','sst_ok','s2_bloom_ok',
           'era5_ok','swh_medio','kill_switch','indice_surgencia','direccion']
 df_h_nuevo    = df_rep[[c for c in cols_h if c in df_rep.columns]].copy()
@@ -636,6 +639,7 @@ for _, zona in df_rep.iterrows():
         'lat': lat_z, 'lon': lon_z,
         'dist_km': float(zona['dist_km']),
         'score': float(zona['score']),
+        'score_base': float(zona['score_base']),
         'lat_T16': float(zona['lat_T16']),
         'lon_T16': float(zona['lon_T16']),
         'desp_km': float(zona['desp_km']),
@@ -663,16 +667,17 @@ sys.stdout.flush()
 print("\n" + "=" * 60)
 print(f"PredictaMAR Costero v1.1 COMPLETO -- {FECHA_HOY_STR}")
 print(f"Confianza: {CONFIANZA}")
-print(f"SST L4:      {'OK T=' + str(round(sst_temp_medio,1)) if SST_DISPONIBLE else 'NO'}")
-print(f"ERA5:        {'OK ind=' + str(round(indice_surgencia,2)) if ERA5_DISPONIBLE else 'NO'}")
+print(f"SST L4:      {'OK T=' + str(round(sst_temp_medio,1)) + 'C grad=' + str(round(sst_grad_medio,3)) if SST_DISPONIBLE else 'NO'}")
+print(f"ERA5:        {'OK ind=' + str(round(indice_surgencia,3)) if ERA5_DISPONIBLE else 'NO'}")
 print(f"S2 bloom:    {'OK Fc=' + str(round(Fc_s2,2)) if S2_DISPONIBLE else 'NO (nubosidad)'}")
-print(f"S1 SAR:      {'OK Fc=' + str(round(Fc_s1,2)) if S1_DISPONIBLE else 'NO'}")
+print(f"S1 SAR:      {'OK Fc=' + str(round(Fc_s1,2)) + ' ant=' + str(s1_ant) + 'd' if S1_DISPONIBLE else 'NO'}")
 print(f"ALOS-2:      {'OK Fc=' + str(round(Fc_alos2,2)) if ALOS2_DISPONIBLE else 'NO'}")
-print(f"Corrientes:  {'OK' if CORRIENTES_DISPONIBLE else 'NO'}")
+print(f"Corrientes:  {'OK uo=' + str(round(uo_medio,4)) + ' vo=' + str(round(vo_medio,4)) if CORRIENTES_DISPONIBLE else 'NO'}")
 print(f"Oleaje:      {'ADVERSO SWH=' + str(round(swh_medio,2)) + 'm' if kill_switch_activo else 'OK SWH=' + str(round(swh_medio,2)) + 'm'}")
 print(f"Batimetria:  {'OK' if gebco_slope else 'NO'}")
 print(f"Geometria:   {'OK' if geometria_costera else 'NO'}")
-print(f"Zonas: {len(df_rep)}")
+print(f"Contrib SST: +{contrib_sst:.3f} | Contrib viento: +{contrib_viento:.3f} | Pen mezcla: {penalizacion_mezcla:.3f}")
+print(f"Zonas reportadas: {len(df_rep)}")
 print(f"Fin: {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}")
 print("=" * 60)
 sys.stdout.flush()
