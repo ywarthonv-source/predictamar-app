@@ -1,6 +1,8 @@
 # ================================================================
-# PredictaMAR Costero v1.2 -- APP STREAMLIT PARA CHRISTIAN
-# Puerto Chorrillos - Lima - Sistema Corriente de Humboldt
+# PredictaMAR Costero v2.0 -- APP PARA CHRISTIAN
+# Disenada para captura de pantalla antes de salir al mar
+# Una sola pantalla, sin scroll, mapa con pins
+# Android, sin senial en el mar
 # ================================================================
 
 import streamlit as st
@@ -12,7 +14,7 @@ from datetime import datetime
 import json
 
 st.set_page_config(
-    page_title="PredictaMAR Costero",
+    page_title="PredictaMAR",
     page_icon=":fish:",
     layout="centered",
     initial_sidebar_state="collapsed"
@@ -20,38 +22,244 @@ st.set_page_config(
 
 st.markdown("""
 <style>
-.block-container{padding:0.75rem 1rem;max-width:500px;margin:auto}
-h1{font-size:1.5rem!important;margin-bottom:0.1rem}
-h3{font-size:1.1rem!important;margin-bottom:0.25rem}
-.pill-verde{background:#1D9E75;color:white;padding:10px 16px;border-radius:8px;
-    font-weight:bold;font-size:1.1rem;text-align:center;margin:6px 0;display:block}
-.pill-amarillo{background:#BA7517;color:white;padding:10px 16px;border-radius:8px;
-    font-weight:bold;font-size:1.1rem;text-align:center;margin:6px 0;display:block}
-.pill-rojo{background:#A32D2D;color:white;padding:10px 16px;border-radius:8px;
-    font-weight:bold;font-size:1.1rem;text-align:center;margin:6px 0;display:block}
-.pill-adverso{background:#2C2C2A;color:white;padding:10px 16px;border-radius:8px;
-    font-weight:bold;font-size:1.1rem;text-align:center;margin:6px 0;display:block}
-.sector-hdr{background:#0C447C;color:white;padding:8px 14px;border-radius:8px;
-    font-weight:bold;font-size:1rem;margin:12px 0 6px}
-.zona-nucleo{border-left:4px solid #1D9E75;background:#F4FAF8;
-    border-radius:0 8px 8px 0;padding:10px 12px;margin:4px 0}
-.zona-variante{border-left:4px solid #185FA5;background:#F0F6FB;
-    border-radius:0 8px 8px 0;padding:10px 12px;margin:4px 0}
-.zona-trampa{border-left:4px solid #888780;background:#F5F4F1;
-    border-radius:0 8px 8px 0;padding:10px 12px;margin:4px 0}
-.dato-row{display:flex;justify-content:space-between;font-size:0.85rem;
-    padding:2px 0;border-bottom:0.5px solid #E8E7E0}
-.dato-row:last-child{border-bottom:none}
-.dato-lbl{color:#5F5E5A}
-.dato-val{font-weight:500}
-.alert-info{background:#E6F1FB;border-left:3px solid #185FA5;padding:8px 12px;
-    border-radius:0 6px 6px 0;font-size:0.85rem;margin:6px 0}
-.footer{font-size:0.7rem;color:#888780;text-align:center;margin-top:1.5rem}
+@import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;900&family=Barlow:wght@400;500&display=swap');
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body, .stApp {
+    background: #0A1628 !important;
+    font-family: 'Barlow', sans-serif;
+}
+
+.block-container {
+    padding: 0.75rem !important;
+    max-width: 420px !important;
+    margin: auto !important;
+}
+
+/* Ocultar elementos de Streamlit */
+#MainMenu, footer, header { visibility: hidden; }
+.stDeployButton { display: none; }
+
+/* Header */
+.hdr {
+    text-align: center;
+    padding: 1rem 0 0.5rem;
+    border-bottom: 1px solid #1E3A5F;
+    margin-bottom: 0.75rem;
+}
+.hdr-title {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 1.8rem;
+    font-weight: 900;
+    color: #FFFFFF;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+}
+.hdr-sub {
+    font-size: 0.8rem;
+    color: #4A7FA5;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    margin-top: 2px;
+}
+.hdr-time {
+    font-size: 0.7rem;
+    color: #2A5A7A;
+    margin-top: 4px;
+}
+
+/* Semaforo grande */
+.sema-verde {
+    background: linear-gradient(135deg, #0F6E56, #1D9E75);
+    border-radius: 12px;
+    padding: 1rem;
+    text-align: center;
+    margin-bottom: 0.75rem;
+    box-shadow: 0 0 20px rgba(29,158,117,0.3);
+}
+.sema-rojo {
+    background: linear-gradient(135deg, #7A1B1B, #C0392B);
+    border-radius: 12px;
+    padding: 1rem;
+    text-align: center;
+    margin-bottom: 0.75rem;
+    box-shadow: 0 0 20px rgba(192,57,43,0.3);
+}
+.sema-amarillo {
+    background: linear-gradient(135deg, #7A4A00, #BA7517);
+    border-radius: 12px;
+    padding: 1rem;
+    text-align: center;
+    margin-bottom: 0.75rem;
+    box-shadow: 0 0 20px rgba(186,117,23,0.3);
+}
+.sema-icon {
+    font-size: 2.5rem;
+    line-height: 1;
+    margin-bottom: 0.25rem;
+}
+.sema-text {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 1.6rem;
+    font-weight: 900;
+    color: white;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+.sema-sub {
+    font-size: 0.8rem;
+    color: rgba(255,255,255,0.75);
+    margin-top: 4px;
+}
+
+/* Metricas del mar */
+.mar-datos {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 6px;
+    margin-bottom: 0.75rem;
+}
+.mar-dato {
+    background: #0F2540;
+    border: 1px solid #1E3A5F;
+    border-radius: 8px;
+    padding: 0.6rem 0.4rem;
+    text-align: center;
+}
+.mar-dato-val {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 1.4rem;
+    font-weight: 700;
+    color: #FFFFFF;
+    line-height: 1;
+}
+.mar-dato-lbl {
+    font-size: 0.65rem;
+    color: #4A7FA5;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-top: 3px;
+}
+.mar-dato-ok  { border-color: #1D9E75; }
+.mar-dato-warn { border-color: #BA7517; }
+.mar-dato-bad  { border-color: #C0392B; }
+
+/* Alerta modo */
+.modo-alerta {
+    background: #0F2540;
+    border: 1px solid #1E3A5F;
+    border-left: 3px solid #185FA5;
+    border-radius: 0 8px 8px 0;
+    padding: 0.5rem 0.75rem;
+    margin-bottom: 0.75rem;
+    font-size: 0.78rem;
+    color: #7AB3D0;
+    line-height: 1.4;
+}
+
+/* Titulo secciones */
+.sec-title {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: #4A7FA5;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    margin-bottom: 0.5rem;
+    padding-bottom: 4px;
+    border-bottom: 1px solid #1E3A5F;
+}
+
+/* Mapa iframe */
+.mapa-wrap {
+    border-radius: 12px;
+    overflow: hidden;
+    border: 1px solid #1E3A5F;
+    margin-bottom: 0.75rem;
+    height: 260px;
+}
+
+/* Sectores lista */
+.sector-item {
+    background: #0F2540;
+    border: 1px solid #1E3A5F;
+    border-radius: 10px;
+    padding: 0.75rem;
+    margin-bottom: 6px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+.sector-color {
+    width: 4px;
+    height: 48px;
+    border-radius: 2px;
+    flex-shrink: 0;
+}
+.sector-body { flex: 1; }
+.sector-nombre {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 1rem;
+    font-weight: 700;
+    color: #FFFFFF;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+.sector-dist {
+    font-size: 0.75rem;
+    color: #4A7FA5;
+    margin-top: 2px;
+}
+.sector-dir {
+    font-size: 0.82rem;
+    color: #7AB3D0;
+    margin-top: 3px;
+}
+.sector-btn {
+    background: #1E3A5F;
+    border: none;
+    border-radius: 6px;
+    padding: 6px 10px;
+    color: #7AB3D0;
+    font-size: 0.72rem;
+    text-decoration: none;
+    white-space: nowrap;
+    font-family: 'Barlow', sans-serif;
+}
+
+/* Login */
+.login-wrap {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 2rem 1.5rem;
+}
+.login-logo {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 2.2rem;
+    font-weight: 900;
+    color: #FFFFFF;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    text-align: center;
+    margin-bottom: 4px;
+}
+.login-sub {
+    font-size: 0.75rem;
+    color: #4A7FA5;
+    text-align: center;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    margin-bottom: 2rem;
+}
 </style>
 """, unsafe_allow_html=True)
 
 # ================================================================
-# LOGIN SIMPLE
+# LOGIN
 # ================================================================
 USUARIOS = {
     "christian": "chorrillos2025",
@@ -60,29 +268,23 @@ USUARIOS = {
     "samantha":  "predictamar2025",
 }
 
-def check_login():
-    if "logged_in" not in st.session_state:
-        st.session_state.logged_in = False
-    if not st.session_state.logged_in:
-        st.markdown("# PredictaMAR Costero")
-        st.markdown("**Puerto Chorrillos - Lima**")
-        st.markdown("---")
-        with st.form("login_form"):
-            st.markdown("### Ingresa tus datos")
-            usuario = st.text_input("Usuario", placeholder="tu usuario")
-            clave   = st.text_input("Clave", type="password", placeholder="tu clave")
-            btn     = st.form_submit_button("Entrar")
-            if btn:
-                if usuario.lower() in USUARIOS and USUARIOS[usuario.lower()] == clave:
-                    st.session_state.logged_in = True
-                    st.session_state.usuario   = usuario.lower()
-                    st.rerun()
-                else:
-                    st.error("Usuario o clave incorrectos")
-        return False
-    return True
+if "logged_in" not in st.session_state:
+    st.session_state.logged_in = False
 
-if not check_login():
+if not st.session_state.logged_in:
+    st.markdown('<div class="login-logo">PredictaMAR</div>', unsafe_allow_html=True)
+    st.markdown('<div class="login-sub">Puerto Chorrillos</div>', unsafe_allow_html=True)
+    with st.form("login"):
+        usuario = st.text_input("", placeholder="Usuario")
+        clave   = st.text_input("", type="password", placeholder="Clave")
+        btn     = st.form_submit_button("ENTRAR", use_container_width=True)
+        if btn:
+            if usuario.lower() in USUARIOS and USUARIOS[usuario.lower()] == clave:
+                st.session_state.logged_in = True
+                st.session_state.usuario   = usuario.lower()
+                st.rerun()
+            else:
+                st.error("Usuario o clave incorrectos")
     st.stop()
 
 # ================================================================
@@ -98,316 +300,273 @@ def cargar_datos():
         gc      = gspread.authorize(creds)
         sh      = gc.open_by_key(st.secrets["SHEET_ID"])
         df_rep  = pd.DataFrame(sh.worksheet("costero_reporte").get_all_records())
-        df_ipo  = pd.DataFrame(sh.worksheet("costero_ipo").get_all_records())
-        return df_rep, df_ipo, None
+        return df_rep, None
     except Exception as e:
-        return None, None, str(e)
+        return None, str(e)
+
+def to_float(v, d=0.0):
+    try: return float(v)
+    except: return d
+
+def to_bool(v):
+    if isinstance(v, bool): return v
+    return str(v).upper() in ("TRUE","1","YES")
 
 # ================================================================
-# HELPERS
+# HEADER
 # ================================================================
-def to_bool(val):
-    if isinstance(val, bool): return val
-    if str(val).upper() in ("TRUE","1","YES"): return True
-    return False
+st.markdown("""
+<div class="hdr">
+  <div class="hdr-title">PredictaMAR</div>
+  <div class="hdr-sub">Puerto Chorrillos</div>
+</div>
+""", unsafe_allow_html=True)
 
-def to_float(val, default=0.0):
-    try: return float(val)
-    except: return default
-
-def semaforo_pill(s):
-    s = str(s).upper()
-    if "ADVERSO" in s:
-        return '<span class="pill-adverso">ADVERSO -- NO SALIR HOY</span>'
-    if "VERDE" in s:
-        return '<span class="pill-verde">VERDE -- CONDICION FAVORABLE</span>'
-    if "AMARILLO" in s:
-        return '<span class="pill-amarillo">AMARILLO -- CONDICION POSIBLE</span>'
-    return '<span class="pill-rojo">ROJO -- CONDICION BAJA</span>'
-
-def rol_icon(rol):
-    rol = str(rol).upper()
-    if "NUCLEO"    in rol: return "[1] PUNTO PRINCIPAL"
-    if "VARIANTE_1" in rol: return "[2] Alternativa A"
-    if "VARIANTE_2" in rol: return "[3] Alternativa B"
-    if "TRAMPA_1"  in rol: return "[4] Refugio 1"
-    if "TRAMPA_2"  in rol: return "[5] Refugio 2"
-    return rol
-
-def rol_clase(rol):
-    rol = str(rol).upper()
-    if "NUCLEO"   in rol: return "zona-nucleo"
-    if "VARIANTE" in rol: return "zona-variante"
-    return "zona-trampa"
-
-def sector_nombre(s):
-    return {
-        "COSTERO": "Orilla (0-3 km)",
-        "SUR":     "Sur -- Morro Solar",
-        "NORTE":   "Norte -- Miraflores",
-        "OESTE":   "Oeste -- Mar abierto"
-    }.get(str(s).upper(), s)
-
-def maps_link(lat, lon):
-    return f"https://www.google.com/maps?q={lat},{lon}"
-
-def certeza_texto(score_abs):
-    s = to_float(score_abs)
-    if s >= 0.60: return "Alta"
-    if s >= 0.45: return "Media"
-    return "Baja (modo fisico)"
-
-# ================================================================
-# ENCABEZADO
-# ================================================================
-col_t, col_b = st.columns([3,1])
-with col_t:
-    st.markdown("# PredictaMAR Costero")
-    st.markdown("**Puerto Chorrillos -- Lima**")
-with col_b:
-    if st.button("Actualizar"):
+col_act, col_sal = st.columns([3,1])
+with col_act:
+    if st.button("Actualizar datos", use_container_width=True):
         st.cache_data.clear()
+        st.rerun()
+with col_sal:
+    if st.button("Salir"):
+        st.session_state.logged_in = False
         st.rerun()
 
 # ================================================================
 # CARGAR DATOS
 # ================================================================
-df_rep, df_ipo, error = cargar_datos()
+df_rep, error = cargar_datos()
 
-if error:
-    st.error(f"Error al cargar datos: {error}")
+if error or df_rep is None or len(df_rep) == 0:
+    st.error("Sin datos. Conectate a WiFi y actualiza.")
     st.stop()
 
-if df_rep is None or len(df_rep) == 0:
-    st.warning("Sin datos. El pipeline corre a las 3AM y 3PM Lima.")
-    st.stop()
+fila        = df_rep.iloc[0]
+kill_switch = to_bool(fila.get("kill_switch", False))
+swh         = to_float(fila.get("swh_medio", 0.8))
+sst_temp    = to_float(fila.get("sst_temp_medio", 0))
+ind_surg    = to_float(fila.get("indice_surgencia", 0.5))
+s2_ok       = to_bool(fila.get("s2_bloom_ok", False))
+s1_dias     = int(to_float(fila.get("s1_dias", 99)))
+hora_str    = str(fila.get("hora_utc",""))
+confianza   = str(fila.get("confianza","MEDIA"))
+uo          = to_float(fila.get("uo_medio",0))
+vo          = to_float(fila.get("vo_medio",0))
 
-# Datos globales del dia
-fila         = df_rep.iloc[0]
-fecha_str    = str(fila.get("fecha",""))
-hora_str     = str(fila.get("hora_utc",""))
-confianza    = str(fila.get("confianza","MEDIA"))
-kill_switch  = to_bool(fila.get("kill_switch", False))
-swh          = to_float(fila.get("swh_medio", 0.8))
-sst_temp     = fila.get("sst_temp_medio", None)
-ind_surg     = to_float(fila.get("indice_surgencia", 0.5))
-s2_ok        = to_bool(fila.get("s2_bloom_ok", False))
-sst_ok       = to_bool(fila.get("sst_ok", False))
-era5_ok      = to_bool(fila.get("era5_ok", False))
-s1_dias_raw  = fila.get("s1_dias", 99)
-s1_dias      = int(to_float(s1_dias_raw, 99))
-uo           = to_float(fila.get("uo_medio", 0))
-vo           = to_float(fila.get("vo_medio", 0))
-bonus_trampa = to_float(fila.get("bonus_trampa", 0))
-
-# Determinar semaforo general -- CORRECCION: kill_switch es string "False"/"True"
 mar_adverso = (swh > 1.5) or kill_switch
 
 # ================================================================
-# ESTADO DEL MAR
+# SEMAFORO GRANDE
 # ================================================================
-st.markdown("---")
-st.markdown("### Estado del mar hoy")
-
 if mar_adverso:
-    st.markdown('<span class="pill-adverso">ADVERSO -- NO SALIR HOY</span>', unsafe_allow_html=True)
-    st.error(f"El oleaje es {swh:.1f}m. Supera el limite operacional de 1.5m.")
+    st.markdown("""
+    <div class="sema-rojo">
+      <div class="sema-icon">X</div>
+      <div class="sema-text">No salir hoy</div>
+      <div class="sema-sub">Oleaje adverso -- condicion peligrosa</div>
+    </div>
+    """, unsafe_allow_html=True)
+elif confianza == "ALTA":
+    st.markdown("""
+    <div class="sema-verde">
+      <div class="sema-icon">OK</div>
+      <div class="sema-text">Buenas condiciones</div>
+      <div class="sema-sub">Zonas identificadas -- listo para salir</div>
+    </div>
+    """, unsafe_allow_html=True)
 else:
-    if confianza == "ALTA":
-        st.markdown('<span class="pill-verde">MAR OPERACIONAL -- Buenas condiciones</span>', unsafe_allow_html=True)
-    elif confianza == "MEDIA":
-        st.markdown('<span class="pill-amarillo">MAR OPERACIONAL -- Confianza media</span>', unsafe_allow_html=True)
-    else:
-        st.markdown('<span class="pill-rojo">MAR OPERACIONAL -- Datos limitados</span>', unsafe_allow_html=True)
+    st.markdown("""
+    <div class="sema-amarillo">
+      <div class="sema-icon">~~</div>
+      <div class="sema-text">Condiciones moderadas</div>
+      <div class="sema-sub">Datos limitados -- usar criterio propio</div>
+    </div>
+    """, unsafe_allow_html=True)
 
-# Metricas
-c1, c2, c3 = st.columns(3)
-with c1:
-    temp_val = f"{to_float(sst_temp):.1f}C" if sst_temp else "Sin dato"
-    st.metric("Temperatura", temp_val,
-              delta="Rango pejerrey: 17-22C" if sst_temp else None)
-with c2:
-    st.metric("Surgencia", f"{int(ind_surg*100)}%",
-              delta="Alta" if ind_surg >= 0.70 else "Moderada",
-              delta_color="normal" if ind_surg >= 0.50 else "inverse")
-with c3:
-    st.metric("Oleaje", f"{swh:.1f}m",
-              delta="OK" if swh <= 1.0 else "Moderado" if swh <= 1.5 else "ADVERSO",
-              delta_color="normal" if swh <= 1.0 else "off" if swh <= 1.5 else "inverse")
+# ================================================================
+# METRICAS DEL MAR
+# ================================================================
+temp_cls  = "mar-dato-ok"  if 17 <= sst_temp <= 22 else "mar-dato-warn"
+surg_cls  = "mar-dato-ok"  if ind_surg >= 0.70 else "mar-dato-warn"
+ola_cls   = "mar-dato-ok"  if swh <= 1.0 else "mar-dato-warn" if swh <= 1.5 else "mar-dato-bad"
 
-# Corrientes
-vel_corriente = np.sqrt(uo**2 + vo**2) * 100  # cm/s
 dirs = ["N","NE","E","SE","S","SO","O","NO"]
-angulo_cor = float(np.degrees(np.arctan2(uo, vo)))
-dir_cor = dirs[int((angulo_cor + 22.5) / 45) % 8]
+ang  = float(np.degrees(np.arctan2(uo, vo)))
+dir_agua = dirs[int((ang + 22.5) / 45) % 8]
 
 st.markdown(f"""
-<div class="alert-info">
-<b>Corrientes hoy:</b> {vel_corriente:.1f} cm/s hacia el {dir_cor} --
-En 16 horas el agua se desplaza ~{vel_corriente*0.576:.1f} km en esa direccion
+<div class="mar-datos">
+  <div class="mar-dato {temp_cls}">
+    <div class="mar-dato-val">{sst_temp:.0f}C</div>
+    <div class="mar-dato-lbl">Temperatura</div>
+  </div>
+  <div class="mar-dato {surg_cls}">
+    <div class="mar-dato-val">{int(ind_surg*100)}%</div>
+    <div class="mar-dato-lbl">Surgencia</div>
+  </div>
+  <div class="mar-dato {ola_cls}">
+    <div class="mar-dato-val">{swh:.1f}m</div>
+    <div class="mar-dato-lbl">Oleaje</div>
+  </div>
 </div>
 """, unsafe_allow_html=True)
 
-# Sensores
-st.markdown("**Sensores activos:**")
-sensores_html = ""
-sensores_html += f"<li>{'[OK]' if sst_ok else '[NO]'} Temperatura del mar (SST L4 CMEMS)</li>"
-sensores_html += f"<li>{'[OK]' if era5_ok else '[NO]'} Viento y surgencia (ERA5)</li>"
-if s2_ok:
-    sensores_html += "<li>[OK] Sentinel-2 clorofila -- datos biologicos directos</li>"
-else:
-    sensores_html += "<li>[--] Sentinel-2 sin dato -- nubosidad -- modo Teatro Fisico activo</li>"
-if s1_dias <= 3:
-    sensores_html += f"<li>[OK] Radar SAR Sentinel-1 -- {s1_dias} dias de antiguedad</li>"
-elif s1_dias <= 6:
-    sensores_html += f"<li>[~~] Radar SAR -- {s1_dias} dias de antiguedad (algo antiguo)</li>"
-else:
-    sensores_html += "<li>[NO] Radar SAR sin dato reciente</li>"
-
-st.markdown(f"<ul>{sensores_html}</ul>", unsafe_allow_html=True)
-
-if not s2_ok:
-    st.markdown("""
-<div class="alert-info">
-<b>Modo Teatro Fisico:</b> Sin imagen de satelite optico por nubes.
-El sistema predice por temperatura del mar, viento y geometria costera.
-Los puntos son los mejores disponibles con la informacion de hoy.
+# Modo y hora
+modo_txt = "Nublado -- modo fisico activo" if not s2_ok else "Satelite optico activo"
+st.markdown(f"""
+<div class="modo-alerta">
+  {modo_txt} -- Agua se mueve hacia el {dir_agua} --
+  Actualizado: {hora_str} UTC
 </div>
 """, unsafe_allow_html=True)
 
-st.markdown(f"*Datos de: {fecha_str} -- Actualizado: {hora_str} UTC*")
-
-# ================================================================
-# ZONAS POR SECTOR
-# ================================================================
 if mar_adverso:
-    st.error("No se muestran zonas porque el mar esta adverso hoy.")
     st.stop()
 
-st.markdown("---")
-st.markdown("### Zonas de pesca -- 4 sectores")
-st.caption("Toca las coordenadas para abrir en Google Maps")
+# ================================================================
+# MAPA CON PINS DE GOOGLE MAPS EMBED
+# Solo el punto principal de cada sector
+# ================================================================
+st.markdown('<div class="sec-title">Mapa -- puntos de hoy</div>', unsafe_allow_html=True)
 
+# Obtener punto principal de cada sector
 orden_sectores = ["COSTERO", "SUR", "NORTE", "OESTE"]
-sectores_presentes = [s for s in orden_sectores if s in df_rep["sector"].values]
+colores_sector = {
+    "COSTERO": "#1D9E75",
+    "SUR":     "#185FA5",
+    "NORTE":   "#534AB7",
+    "OESTE":   "#BA7517"
+}
+nombres_sector = {
+    "COSTERO": "Orilla",
+    "SUR":     "Sur - Morro Solar",
+    "NORTE":   "Norte - Miraflores",
+    "OESTE":   "Mar abierto"
+}
 
-if len(sectores_presentes) == 0:
-    st.warning("Sin datos de sectores. Espera la proxima actualizacion.")
-    st.stop()
-
-for sector in sectores_presentes:
+puntos_principales = []
+for sector in orden_sectores:
     df_sec = df_rep[df_rep["sector"] == sector].copy()
-    # Convertir rank_sector a numero para ordenar
-    df_sec["rank_num"] = pd.to_numeric(df_sec["rank_sector"], errors="coerce").fillna(99)
-    df_sec = df_sec.sort_values("rank_num").reset_index(drop=True)
-
     if len(df_sec) == 0:
         continue
+    df_sec["rank_num"] = pd.to_numeric(df_sec["rank_sector"], errors="coerce").fillna(99)
+    p1 = df_sec.sort_values("rank_num").iloc[0]
+    lat = to_float(p1.get("lat", 0))
+    lon = to_float(p1.get("lon", 0))
+    if lat != 0 and lon != 0:
+        puntos_principales.append({
+            "sector": sector,
+            "lat": lat,
+            "lon": lon,
+            "dist": to_float(p1.get("dist_km", 0)),
+            "score_local": to_float(p1.get("score_local", 0)),
+        })
 
-    st.markdown(f'<div class="sector-hdr">{sector_nombre(sector)} -- {len(df_sec)} puntos</div>',
-                unsafe_allow_html=True)
+# Construir URL de Google Maps con multiples pins
+# Centro del mapa: Chorrillos
+LAT_CHORRILLOS = -12.157
+LON_CHORRILLOS = -77.021
 
-    for _, zona in df_sec.iterrows():
-        rol       = str(zona.get("rol",""))
-        lat       = to_float(zona.get("lat",0))
-        lon       = to_float(zona.get("lon",0))
-        dist      = to_float(zona.get("dist_km",0))
-        score_abs = to_float(zona.get("score_abs",0))
-        score_loc = to_float(zona.get("score_local",0))
-        sem_local = str(zona.get("semaforo_local",""))
-        lat16     = to_float(zona.get("lat_T16", lat))
-        lon16     = to_float(zona.get("lon_T16", lon))
-        desp      = to_float(zona.get("desp_km",0))
-        direccion = str(zona.get("direccion",""))
-        rank      = int(to_float(zona.get("rank_sector",0)))
+if puntos_principales:
+    # Mapa embed con markers -- usar iframe de Google Maps
+    markers_str = ""
+    for p in puntos_principales:
+        markers_str += f"markers=color:red%7C{p['lat']},{p['lon']}&"
 
-        clase   = rol_clase(rol)
-        rotulo  = rol_icon(rol)
-        certeza = certeza_texto(score_abs)
+    # Centro en Chorrillos
+    maps_embed = (
+        f"https://maps.googleapis.com/maps/api/staticmap?"
+        f"center={LAT_CHORRILLOS},{LON_CHORRILLOS}"
+        f"&zoom=11&size=400x250&scale=2"
+        f"&maptype=satellite"
+        f"&{markers_str}"
+        f"key=AIzaSyD-placeholder"
+    )
 
-        # Semaforo local del punto
-        sem_upper = sem_local.upper()
-        if "VERDE" in sem_upper:   icono_sem = "[V]"
-        elif "AMARILLO" in sem_upper: icono_sem = "[~]"
-        else:                         icono_sem = "[x]"
+    # Sin API key usar iframe de Google Maps normal
+    # Construir URL con todos los puntos para abrir en Google Maps
+    query_parts = []
+    for i, p in enumerate(puntos_principales):
+        query_parts.append(f"{p['lat']},{p['lon']}")
 
-        link_ahora = maps_link(lat, lon)
-        link_16h   = maps_link(lat16, lon16)
+    # Primer punto como destino, resto como waypoints
+    if len(query_parts) == 1:
+        maps_url = f"https://www.google.com/maps?q={query_parts[0]}"
+    else:
+        # Abrir mapa centrado en Chorrillos mostrando todos los pins
+        maps_url = f"https://www.google.com/maps/search/?api=1&query={LAT_CHORRILLOS},{LON_CHORRILLOS}"
 
-        # Score local como porcentaje
-        score_pct = int(score_loc * 100)
+    # Iframe embebido -- mapa de OpenStreetMap sin API key
+    # Mostrar el area de Chorrillos con los puntos
+    bbox_lat_min = min([p['lat'] for p in puntos_principales]) - 0.05
+    bbox_lat_max = max([p['lat'] for p in puntos_principales]) + 0.05
+    bbox_lon_min = min([p['lon'] for p in puntos_principales]) - 0.05
+    bbox_lon_max = max([p['lon'] for p in puntos_principales]) + 0.05
 
-        contenido = f"""
-<div class="{clase}">
-<div style="font-weight:bold;font-size:0.95rem;margin-bottom:6px">
-  {icono_sem} {rotulo}
-</div>
-<div class="dato-row">
-  <span class="dato-lbl">Posicion ahora</span>
-  <span class="dato-val"><a href="{link_ahora}" target="_blank">{lat:.4f}, {lon:.4f}</a></span>
-</div>
-<div class="dato-row">
-  <span class="dato-lbl">Posicion en 16h</span>
-  <span class="dato-val"><a href="{link_16h}" target="_blank">{lat16:.4f}, {lon16:.4f}</a></span>
-</div>
-<div class="dato-row">
-  <span class="dato-lbl">Distancia del muelle</span>
-  <span class="dato-val">{dist:.1f} km</span>
-</div>
-<div class="dato-row">
-  <span class="dato-lbl">Temperatura del mar</span>
-  <span class="dato-val">{f"{to_float(sst_temp):.1f}C" if sst_temp else "Sin dato"}</span>
-</div>
-<div class="dato-row">
-  <span class="dato-lbl">Surgencia activa</span>
-  <span class="dato-val">{int(ind_surg*100)}% -- {"Alta" if ind_surg >= 0.70 else "Moderada" if ind_surg >= 0.40 else "Baja"}</span>
-</div>
-<div class="dato-row">
-  <span class="dato-lbl">Probabilidad local</span>
-  <span class="dato-val">{score_pct}% en este sector</span>
-</div>
-<div class="dato-row">
-  <span class="dato-lbl">Certeza</span>
-  <span class="dato-val">{certeza}</span>
-</div>
-<div class="dato-row">
-  <span class="dato-lbl">Desplazamiento agua</span>
-  <span class="dato-val">{desp:.1f} km hacia {direccion} en 16h</span>
-</div>
-<div style="font-size:0.8rem;color:#5F5E5A;margin-top:6px;padding-top:4px;border-top:0.5px solid #E8E7E0">
-"""
-        if "NUCLEO" in rol.upper():
-            contenido += "Primer lance recomendado. Mayor probabilidad fisica del sector."
-        elif "VARIANTE" in rol.upper():
-            contenido += "Si el punto principal no da resultado, prueba aqui."
-        else:
-            contenido += "Trampa fisica -- util si el cardumen se disperso del frente."
+    osm_url = (
+        f"https://www.openstreetmap.org/export/embed.html"
+        f"?bbox={bbox_lon_min}%2C{bbox_lat_min}%2C{bbox_lon_max}%2C{bbox_lat_max}"
+        f"&layer=mapnik"
+        f"&marker={LAT_CHORRILLOS}%2C{LON_CHORRILLOS}"
+    )
 
-        contenido += "</div></div>"
-        st.markdown(contenido, unsafe_allow_html=True)
+    st.markdown(f"""
+    <div class="mapa-wrap">
+      <iframe src="{osm_url}"
+        width="100%" height="260" frameborder="0" scrolling="no"
+        style="border:none">
+      </iframe>
+    </div>
+    """, unsafe_allow_html=True)
+
+    st.caption("Toca cada zona abajo para abrir el pin exacto en Google Maps")
 
 # ================================================================
-# COMO USAR
+# LISTA DE SECTORES -- SIMPLE Y CLARA
 # ================================================================
-st.markdown("---")
-st.markdown("### Como usar estas zonas")
+st.markdown('<div class="sec-title">Zonas recomendadas hoy</div>', unsafe_allow_html=True)
+
+for p in puntos_principales:
+    sector   = p["sector"]
+    lat      = p["lat"]
+    lon      = p["lon"]
+    dist     = p["dist"]
+    color    = colores_sector.get(sector, "#4A7FA5")
+    nombre   = nombres_sector.get(sector, sector)
+
+    # Direccion desde el muelle
+    dlat = lat - LAT_CHORRILLOS
+    dlon = lon - LON_CHORRILLOS
+    ang_sector = float(np.degrees(np.arctan2(dlon, dlat)))
+    dirs_esp = ["Norte","NorEste","Este","SurEste","Sur","SurOeste","Oeste","NorOeste"]
+    dir_sector = dirs_esp[int((ang_sector + 22.5) / 45) % 8]
+
+    # Link a Google Maps con pin exacto
+    gmap_link = f"https://www.google.com/maps?q={lat},{lon}"
+
+    # Tiempo estimado de navegacion (motor 15HP ~ 15 km/h)
+    tiempo_min = int(dist / 15 * 60)
+
+    st.markdown(f"""
+    <div class="sector-item">
+      <div class="sector-color" style="background:{color}"></div>
+      <div class="sector-body">
+        <div class="sector-nombre">{nombre}</div>
+        <div class="sector-dist">{dist:.1f} km del muelle -- aprox {tiempo_min} min navegando</div>
+        <div class="sector-dir">Direccion: {dir_sector} -- agua se mueve al {dir_agua}</div>
+      </div>
+      <a href="{gmap_link}" target="_blank" class="sector-btn">Ver en mapa</a>
+    </div>
+    """, unsafe_allow_html=True)
+
+# ================================================================
+# NOTA FINAL
+# ================================================================
 st.markdown("""
-1. **Elige el sector** segun combustible y tiempo disponible
-2. **Ve al Punto 1** (principal) -- es donde el modelo calcula mayor probabilidad
-3. **Si no hay senales** en 20-30 min (aves, color del agua), muevete al punto siguiente
-4. **Los Refugios** son trampas fisicas costeras -- utiles cuando el mar esta movido
-5. **Las coordenadas en 16h** indican hacia donde se mueve el agua
-""")
+<div class="modo-alerta" style="margin-top:0.75rem;font-size:0.75rem">
+  <b>Antes de salir:</b> Toca "Ver en mapa" por cada zona y
+  guarda una captura de pantalla. No tendras senial en el mar.
+</div>
+""", unsafe_allow_html=True)
 
-# ================================================================
-# LOGOUT
-# ================================================================
-st.markdown("---")
-col_l, col_r = st.columns([3,1])
-with col_r:
-    if st.button("Salir"):
-        st.session_state.logged_in = False
-        st.rerun()
-
-st.markdown(f'<div class="footer">PredictaMAR Costero v1.2 -- {fecha_str} -- UNI Startup 2025</div>',
-            unsafe_allow_html=True)
+st.markdown(f'<div style="text-align:center;font-size:0.65rem;color:#2A5A7A;margin-top:0.75rem">PredictaMAR v2.0 -- {datetime.now().strftime("%d/%m/%Y")}</div>', unsafe_allow_html=True)
