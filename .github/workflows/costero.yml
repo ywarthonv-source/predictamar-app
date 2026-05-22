@@ -2,12 +2,9 @@ name: PredictaMAR Costero Pipeline
 
 on:
   schedule:
-    # 3:00 AM Lima (UTC-5) = 08:00 UTC
     - cron: '0 8 * * *'
-    # 3:00 PM Lima (UTC-5) = 20:00 UTC
     - cron: '0 20 * * *'
   workflow_dispatch:
-    # Permite correr manualmente desde GitHub Actions
 
 jobs:
   run-costero-pipeline:
@@ -30,16 +27,18 @@ jobs:
           pip install gspread gspread-dataframe google-auth
           pip install copernicusmarine
           pip install earthengine-api
+          pip install cdsapi
           pip install pyproj
 
       - name: Correr pipeline costero
         env:
-          CMEMS_USER:    ${{ secrets.CMEMS_USER }}
-          CMEMS_PASS:    ${{ secrets.CMEMS_PASS }}
-          NASA_TOKEN:    ${{ secrets.NASA_TOKEN }}
-          CDS_KEY:       ${{ secrets.CDS_KEY }}
-          SHEET_ID:      ${{ secrets.SHEET_ID }}
-          GOOGLE_SA_JSON: ${{ secrets.GOOGLE_SA_JSON }}
+          CMEMS_USER:       ${{ secrets.CMEMS_USER }}
+          CMEMS_PASS:       ${{ secrets.CMEMS_PASS }}
+          NASA_TOKEN:       ${{ secrets.NASA_TOKEN }}
+          CDS_KEY:          ${{ secrets.CDS_KEY }}
+          SHEET_ID:         ${{ secrets.SHEET_ID }}
+          COSTERO_SHEET_ID: ${{ secrets.COSTERO_SHEET_ID }}
+          GOOGLE_SA_JSON:   ${{ secrets.GOOGLE_SA_JSON }}
         run: |
           cd costero
           python costero_pipeline_v10.py
