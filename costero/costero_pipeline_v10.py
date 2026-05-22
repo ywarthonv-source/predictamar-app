@@ -52,6 +52,7 @@ scopes   = ["https://www.googleapis.com/auth/spreadsheets",
             "https://www.googleapis.com/auth/drive"]
 sa_creds = SACredentials.from_service_account_info(sa_info, scopes=scopes)
 gc       = gspread.authorize(sa_creds)
+print(f"DEBUG SHEET_ID: {SHEET_ID[:8]}...")
 sh       = gc.open_by_key(SHEET_ID)
 print(f"Sheets OK: {sh.title}")
 
