@@ -482,6 +482,28 @@ for la in lats_a:
             puntos_flat.append((float(la), float(lo), d))
 
 print(f"  Puntos en grilla: {len(puntos_flat)} (costero + medio + abierto)")
+
+# Organizar puntos por sector para muestreo representativo
+from collections import defaultdict
+puntos_por_sector = defaultdict(list)
+for lat, lon, dist in puntos_flat:
+    s = asignar_sector(lat, lon, dist)
+    puntos_por_sector[s].append((lat, lon, dist))
+
+# Muestra representativa: max 150 puntos por sector
+MAX_POR_SECTOR = 150
+puntos_muestra = []
+for sector_key, pts in puntos_por_sector.items():
+    if len(pts) > MAX_POR_SECTOR:
+        indices = np.linspace(0, len(pts)-1, MAX_POR_SECTOR, dtype=int)
+        pts_sel = [pts[i] for i in indices]
+    else:
+        pts_sel = pts
+    puntos_muestra.extend(pts_sel)
+    print(f"  Sector {sector_key}: {len(pts)} puntos -> {len(pts_sel)} muestreados")
+
+puntos_flat = puntos_muestra
+print(f"  Total a evaluar: {len(puntos_flat)} puntos")
 sys.stdout.flush()
 
 def adveccion_punto(lat, lon, horas):
@@ -498,7 +520,7 @@ def adveccion_punto(lat, lon, horas):
 print("\nCalculando MicroScore por sector...")
 resultados = []
 
-for i in range(0, min(len(puntos_flat), 800), 100):
+for i in range(0, len(puntos_flat), 100):
     batch = puntos_flat[i:i+100]
     features = []
     for lat, lon, dist in batch:
