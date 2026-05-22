@@ -325,7 +325,7 @@ for i in range(0, min(len(puntos_flat), 500), batch_size):
             capas.append(alos2_norm.multiply(W_ACTIVOS["alos2"] * Fc_alos2))
         if not capas:
             continue
-        score_imagen = ee.ImageCollection(capas).sum().rename('score')
+        score_imagen = ee.ImageCollection([c.rename('score') for c in capas]).sum().rename('score')
         res = score_imagen.reduceRegions(
             collection = fc,
             reducer    = ee.Reducer.mean(),
