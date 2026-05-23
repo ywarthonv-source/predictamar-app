@@ -28,6 +28,84 @@ import ee
 import warnings
 warnings.filterwarnings('ignore')
 
+# ================================================================
+# MODULO DE MAREAS -- Componentes armonicos Callao/Lima
+# Fuente: IHO Tidal Constituent Database / IMARPE / literatura HCS
+# Marea semidiurna: dos pleamares y dos bajamares por dia
+# Pejerrey entra con marea llenante hacia los roquedales de orilla
+# Bertrand et al. 2008, Gutierrez et al. 2012
+# ================================================================
+import pytz
+
+COMPONENTES_CALLAO = {
+    'M2': (0.381, 175.2, 28.9841),  # Principal lunar semidiurna
+    'S2': (0.107, 195.8, 30.0000),  # Principal solar semidiurna
+    'N2': (0.078, 158.4, 28.4397),  # Lunar eliptica mayor
+    'K1': (0.058, 210.5, 15.0411),  # Lunisolar diurna
+    'O1': (0.042, 195.3, 13.9430),  # Principal lunar diurna
+}
+EPOCH_MAREAS = datetime(2000, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
+LIMA_TZ = pytz.timezone('America/Lima')
+
+def altura_marea_callao(dt_utc):
+    t_horas = (dt_utc - EPOCH_MAREAS).total_seconds() / 3600.0
+    h = 0.0
+    for nombre, (amp, fase_deg, vel_deg_h) in COMPONENTES_CALLAO.items():
+        fase_rad = np.radians(vel_deg_h * t_horas - fase_deg)
+        h += amp * np.cos(fase_rad)
+    return round(h, 3)
+
+def fase_marea_callao(dt_utc, delta_min=30):
+    """
+    Calcula fase de marea usando derivada numerica dh/dt
+    Retorna: (fase_str, altura_m, dhdt_m_h, bonus_score)
+    fase_str: LLENANTE | VACIANTE | PLEAMAR | BAJAMAR
+    bonus: +0.05 LLENANTE, +0.02 PLEAMAR, 0.00 resto
+    """
+    dt_antes   = datetime.fromtimestamp(dt_utc.timestamp() - delta_min*60, tz=timezone.utc)
+    dt_despues = datetime.fromtimestamp(dt_utc.timestamp() + delta_min*60, tz=timezone.utc)
+    h_antes    = altura_marea_callao(dt_antes)
+    h_ahora    = altura_marea_callao(dt_utc)
+    h_despues  = altura_marea_callao(dt_despues)
+    dhdt = (h_despues - h_antes) / (2 * delta_min / 60)
+
+    if abs(dhdt) < 0.005:
+        fase  = "PLEAMAR" if h_ahora > 0 else "BAJAMAR"
+        bonus = 0.02
+    elif dhdt > 0:
+        fase  = "LLENANTE"
+        bonus = 0.05
+    else:
+        fase  = "VACIANTE"
+        bonus = 0.00
+
+    return fase, h_ahora, round(dhdt, 4), bonus
+
+def calcular_ventanas_christian(fecha_hoy):
+    """
+    Calcula fase de marea en las ventanas operacionales de Christian:
+    Madrugada: 4AM, 5AM, 6AM, 7AM Lima
+    Tarde:     5PM, 6PM Lima
+    Retorna dict con fase, altura, bonus y flecha visual por hora
+    """
+    ventanas = {}
+    for hora in [4, 5, 6, 7, 17, 18]:
+        dt_lima = LIMA_TZ.localize(
+            datetime(fecha_hoy.year, fecha_hoy.month, fecha_hoy.day, hora, 0, 0))
+        dt_utc  = dt_lima.astimezone(timezone.utc)
+        fase, altura, dhdt, bonus = fase_marea_callao(dt_utc)
+        flecha = "" if fase in ("LLENANTE","PLEAMAR") else ""
+        ventanas[hora] = {
+            'fase':   fase,
+            'altura': altura,
+            'dhdt':   dhdt,
+            'bonus':  bonus,
+            'flecha': flecha,
+            'etiqueta': f"{flecha} {fase} ({altura:+.2f}m)"
+        }
+    return ventanas
+
+
 print("=" * 60)
 print("PredictaMAR Costero v1.2 -- SECTORIZACION TACTICA")
 print(f"Inicio: {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}")
@@ -74,6 +152,20 @@ DRIVE_BASE    = "/tmp/predictamar_costero"
 os.makedirs(f"{DRIVE_BASE}/raw", exist_ok=True)
 
 print(f"Hoy: {FECHA_HOY_STR} | Bloom: {FECHA_BLOOM.strftime('%Y-%m-%d')} | Surgencia: {FECHA_SURG.strftime('%Y-%m-%d')}")
+
+# Calcular mareas para ventanas de Christian
+VENTANAS_MAREA = calcular_ventanas_christian(FECHA_HOY)
+print("Mareas Chorrillos hoy:")
+for hora, v in VENTANAS_MAREA.items():
+    ventana_nombre = "madrugada" if hora < 12 else "tarde"
+    print(f"  {hora:02d}:00 Lima [{ventana_nombre}]: {v['etiqueta']} | bonus={v['bonus']:.2f}")
+
+# Bonus global de marea: promedio ponderado de las ventanas
+# Ventanas madrugada tienen mayor peso (Christian sale mas temprano)
+bonus_marea_madrugada = np.mean([VENTANAS_MAREA[h]['bonus'] for h in [4,5,6,7]])
+bonus_marea_tarde     = np.mean([VENTANAS_MAREA[h]['bonus'] for h in [17,18]])
+bonus_marea_global    = round(bonus_marea_madrugada * 0.7 + bonus_marea_tarde * 0.3, 3)
+print(f"  Bonus marea global: madrugada={bonus_marea_madrugada:.3f} tarde={bonus_marea_tarde:.3f} global={bonus_marea_global:.3f}")
 sys.stdout.flush()
 
 AOI = ee.Geometry.Rectangle([LON_MIN_C, LAT_MIN_C, LON_MAX_C, LAT_MAX_C])
@@ -564,9 +656,10 @@ for i in range(0, len(puntos_flat), 100):
                 score_base = float(p['mean'])
                 sector     = asignar_sector(lat_p, lon_p, float(p['dist_km']))
 
-                # Score absoluto: base + contribuciones aditivas biologicas
+                # Score absoluto: base + contribuciones aditivas + marea
+                # Marea: +0.05 LLENANTE, +0.02 PLEAMAR, 0.00 VACIANTE
                 score_abs = float(np.clip(
-                    score_base + contrib_sst + contrib_viento + penalizacion_mezcla,
+                    score_base + contrib_sst + contrib_viento + penalizacion_mezcla + bonus_marea_global,
                     0.0, 1.0
                 ))
 
@@ -733,6 +826,13 @@ df_rep['swh_medio']        = round(swh_medio, 2)
 df_rep['kill_switch']      = kill_switch_activo
 df_rep['sst_temp_medio']   = round(sst_temp_medio, 2) if sst_temp_medio else None
 df_rep['indice_surgencia'] = round(indice_surgencia, 3)
+df_rep['bonus_marea_global']    = round(bonus_marea_global, 3)
+df_rep['marea_4am']  = VENTANAS_MAREA[4]['etiqueta']
+df_rep['marea_5am']  = VENTANAS_MAREA[5]['etiqueta']
+df_rep['marea_6am']  = VENTANAS_MAREA[6]['etiqueta']
+df_rep['marea_7am']  = VENTANAS_MAREA[7]['etiqueta']
+df_rep['marea_17pm'] = VENTANAS_MAREA[17]['etiqueta']
+df_rep['marea_18pm'] = VENTANAS_MAREA[18]['etiqueta']
 df_rep['uo_medio']         = round(uo_medio, 5)
 df_rep['vo_medio']         = round(vo_medio, 5)
 df_rep['bonus_trampa']     = round(bonus_trampa, 3)
