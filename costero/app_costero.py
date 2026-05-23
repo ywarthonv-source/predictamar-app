@@ -5,7 +5,7 @@ import gspread
 from google.oauth2.service_account import Credentials as SACredentials
 import json
 import pytz
-from datetime import timezone
+from datetime import datetime, timezone
 
 # ================================================================
 # MAREAS -- Componentes armonicos Callao/Lima
