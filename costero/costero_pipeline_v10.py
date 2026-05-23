@@ -516,7 +516,17 @@ if total_w > 0:
 
 n_bio = sum([SST_DISPONIBLE, ERA5_DISPONIBLE, S2_DISPONIBLE])
 n_fis = sum([S1_DISPONIBLE, ALOS2_DISPONIBLE, bool(gebco_slope), bool(geometria_costera)])
-CONFIANZA = "ALTA" if n_bio >= 2 and n_fis >= 2 else "MEDIA" if n_bio >= 1 or n_fis >= 2 else "BAJA"
+# Confianza corregida: ALTA solo con datos biologicos directos (S2) activos
+# En modo Teatro Fisico (sin S2) la confianza es MEDIA por definicion
+# porque los pesos no estan calibrados empiricamente
+if S2_DISPONIBLE and n_bio >= 2 and n_fis >= 3:
+    CONFIANZA = "ALTA"
+elif n_bio >= 2 and n_fis >= 2:
+    CONFIANZA = "MEDIA"
+elif n_bio >= 1 and n_fis >= 2:
+    CONFIANZA = "MEDIA"
+else:
+    CONFIANZA = "BAJA"
 
 print(f"  Bio: {n_bio} | Fisico: {n_fis} | Confianza: {CONFIANZA}")
 print(f"  Pesos: {', '.join([f'{k[:6]}:{v:.2f}' for k, v in W_activos.items()])}")
