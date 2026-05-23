@@ -133,11 +133,13 @@ mar_adverso = (swh > 1.5) or kill
 st.divider()
 
 if mar_adverso:
-    st.error("ADVERSO -- NO SALIR HOY. Oleaje peligroso.")
+    st.error("ADVERSO -- Oleaje peligroso. No recomendado salir.")
 elif confianza == "ALTA":
-    st.success("BUENAS CONDICIONES -- Listo para salir")
+    st.success("Condiciones fisicas favorables -- datos completos con confirmacion biologica")
+elif confianza == "MEDIA":
+    st.info("Condiciones fisicas estimadas -- modo Teatro Fisico activo (sin dato optico)")
 else:
-    st.warning("CONDICIONES MODERADAS -- Usar criterio propio")
+    st.warning("Datos limitados -- usar criterio propio y experiencia empirica")
 
 c1, c2, c3 = st.columns(3)
 c1.metric("Temperatura", f"{sst:.0f}C")
@@ -183,11 +185,11 @@ with col_m6:
 
 n_llen = sum(1 for h in [4,5,6,7] if mareas[h]['fase'] in ("LLENANTE","PLEAMAR"))
 if n_llen >= 3:
-    st.success("Madrugada favorable -- marea llenante activa")
+    st.success("Madrugada: marea llenante en la mayor parte de la ventana -- condicion favorable para pejerrey de orilla")
 elif n_llen >= 2:
-    st.info("Madrugada mixta -- parte favorable")
+    st.info("Madrugada mixta -- parte de la ventana con marea llenante")
 else:
-    st.warning("Madrugada con vaciante -- tarde puede ser mejor")
+    st.warning("Madrugada con vaciante predominante -- evaluar salida en la tarde")
 
 st.divider()
 st.subheader("Zonas de pesca -- 4 sectores")
