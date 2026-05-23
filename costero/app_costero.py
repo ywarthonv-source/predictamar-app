@@ -4,6 +4,51 @@ import numpy as np
 import gspread
 from google.oauth2.service_account import Credentials as SACredentials
 import json
+import pytz
+from datetime import timezone
+
+# ================================================================
+# MAREAS -- Componentes armonicos Callao/Lima
+# ================================================================
+COMPONENTES_CALLAO = {
+    'M2': (0.381, 175.2, 28.9841),
+    'S2': (0.107, 195.8, 30.0000),
+    'N2': (0.078, 158.4, 28.4397),
+    'K1': (0.058, 210.5, 15.0411),
+    'O1': (0.042, 195.3, 13.9430),
+}
+EPOCH_MAREAS = datetime(2000, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
+LIMA_TZ = pytz.timezone('America/Lima')
+
+def altura_marea(dt_utc):
+    t_horas = (dt_utc - EPOCH_MAREAS).total_seconds() / 3600.0
+    h = 0.0
+    for amp, fase_deg, vel_deg_h in COMPONENTES_CALLAO.values():
+        h += amp * np.cos(np.radians(vel_deg_h * t_horas - fase_deg))
+    return round(h, 3)
+
+def fase_marea(dt_utc):
+    dt_a = datetime.fromtimestamp(dt_utc.timestamp() - 1800, tz=timezone.utc)
+    dt_d = datetime.fromtimestamp(dt_utc.timestamp() + 1800, tz=timezone.utc)
+    dhdt = (altura_marea(dt_d) - altura_marea(dt_a)) / 1.0
+    h = altura_marea(dt_utc)
+    if abs(dhdt) < 0.005:
+        return ("PLEAMAR" if h > 0 else "BAJAMAR"), h, 0.02
+    elif dhdt > 0:
+        return "LLENANTE", h, 0.05
+    else:
+        return "VACIANTE", h, 0.00
+
+def mareas_hoy():
+    hoy = datetime.now(LIMA_TZ).date()
+    resultado = {}
+    for hora in [4, 5, 6, 7, 17, 18]:
+        dt_lima = LIMA_TZ.localize(datetime(hoy.year, hoy.month, hoy.day, hora, 0, 0))
+        dt_utc = dt_lima.astimezone(timezone.utc)
+        fase, altura, bonus = fase_marea(dt_utc)
+        flecha = "" if fase in ("LLENANTE","PLEAMAR") else ""
+        resultado[hora] = {"fase": fase, "altura": altura, "bonus": bonus, "flecha": flecha}
+    return resultado
 
 st.set_page_config(page_title="PredictaMAR", page_icon=":fish:", layout="centered")
 
@@ -109,6 +154,42 @@ if mar_adverso:
     st.stop()
 
 st.divider()
+
+# ================================================================
+# MAREAS -- ventanas operacionales de Christian
+# ================================================================
+mareas = mareas_hoy()
+st.subheader("Marea hoy -- ventanas de pesca")
+col_m1, col_m2, col_m3, col_m4 = st.columns(4)
+with col_m1:
+    v = mareas[4]
+    st.metric("4AM", f"{v['flecha']} {v['fase'][:4]}", f"{v['altura']:+.2f}m")
+with col_m2:
+    v = mareas[5]
+    st.metric("5AM", f"{v['flecha']} {v['fase'][:4]}", f"{v['altura']:+.2f}m")
+with col_m3:
+    v = mareas[6]
+    st.metric("6AM", f"{v['flecha']} {v['fase'][:4]}", f"{v['altura']:+.2f}m")
+with col_m4:
+    v = mareas[7]
+    st.metric("7AM", f"{v['flecha']} {v['fase'][:4]}", f"{v['altura']:+.2f}m")
+col_m5, col_m6, _, _ = st.columns(4)
+with col_m5:
+    v = mareas[17]
+    st.metric("5PM", f"{v['flecha']} {v['fase'][:4]}", f"{v['altura']:+.2f}m")
+with col_m6:
+    v = mareas[18]
+    st.metric("6PM", f"{v['flecha']} {v['fase'][:4]}", f"{v['altura']:+.2f}m")
+
+n_llen = sum(1 for h in [4,5,6,7] if mareas[h]['fase'] in ("LLENANTE","PLEAMAR"))
+if n_llen >= 3:
+    st.success("Madrugada favorable -- marea llenante activa")
+elif n_llen >= 2:
+    st.info("Madrugada mixta -- parte favorable")
+else:
+    st.warning("Madrugada con vaciante -- tarde puede ser mejor")
+
+st.divider()
 st.subheader("Zonas de pesca -- 4 sectores")
 st.caption("Toca 'Ver en mapa' para abrir el pin en Google Maps. Guarda captura antes de salir.")
 
@@ -127,6 +208,38 @@ for sector in orden:
     df_sec = df_sec.sort_values("rank_num").reset_index(drop=True)
 
     with st.expander(f"{nombres.get(sector, sector)} -- {len(df_sec)} puntos", expanded=(sector=="COSTERO")):
+
+        # Curva de marea 24 horas -- Christian ve como se mueve el mar hoy
+        hoy = datetime.now(LIMA_TZ).date()
+        horas_24 = list(range(24))
+        alturas = []
+        fases_24 = []
+        for h in horas_24:
+            dt_lima = LIMA_TZ.localize(datetime(hoy.year, hoy.month, hoy.day, h, 0, 0))
+            dt_utc = dt_lima.astimezone(timezone.utc)
+            alt = altura_marea(dt_utc)
+            fas, _, _ = fase_marea(dt_utc)
+            alturas.append(alt)
+            fases_24.append(fas)
+
+        import pandas as pd
+        df_marea = pd.DataFrame({
+            "Hora": [f"{h:02d}h" for h in horas_24],
+            "Marea (m)": alturas
+        }).set_index("Hora")
+        st.caption("Marea hoy -- sube y baja del mar (24 horas)")
+        st.line_chart(df_marea, height=120, use_container_width=True)
+
+        # Mejor momento del dia segun marea
+        max_idx = alturas.index(max(alturas))
+        min_idx = alturas.index(min(alturas))
+        hora_actual = datetime.now(LIMA_TZ).hour
+        fase_ahora, alt_ahora, _ = fase_marea(
+            LIMA_TZ.localize(datetime(hoy.year, hoy.month, hoy.day, hora_actual, 0, 0)).astimezone(timezone.utc))
+        flecha = "/\" if fase_ahora in ("LLENANTE","PLEAMAR") else ""
+        st.caption(f"Ahora ({hora_actual:02d}h): {flecha} {fase_ahora} {alt_ahora:+.2f}m  |  Pleamar: {max_idx:02d}h  |  Bajamar: {min_idx:02d}h")
+
+        st.divider()
         for _, zona in df_sec.iterrows():
             lat = to_float(zona.get("lat", 0))
             lon = to_float(zona.get("lon", 0))
