@@ -6,10 +6,13 @@
 # -- Area geografica
 LAT_CHORRILLOS   = -12.157
 LON_CHORRILLOS   = -77.021
-LAT_MIN_C        = -12.337
-LAT_MAX_C        = -11.977
-LON_MIN_C        = -77.201
-LON_MAX_C        = -76.841
+# AOI oceanico: solo mar al oeste de la costa de Chorrillos
+# LON_MAX cerca de la costa para no incluir tierra
+# LON_MIN 20km al oeste para cubrir mar abierto
+LAT_MIN_C        = -12.357
+LAT_MAX_C        = -11.957
+LON_MIN_C        = -77.241
+LON_MAX_C        = -77.001
 
 # -- Resolucion y grilla
 RADIO_MAX_KM     = 20
