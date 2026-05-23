@@ -436,7 +436,18 @@ try:
         ).rename('score')
         S1_DISPONIBLE = True
         Fc_s1 = max(0.0, 1.0 - s1_ant / FC_S1_MAX_DIAS)
-        print(f"  S1 OK -- antiguedad: {s1_ant}d | Fc: {Fc_s1:.2f}")
+        # Filtro de viento para SAR: si viento fuera de rango 3-8 m/s
+        # la senal SAR es poco confiable (calma = falsos slicks, viento alto = ruido)
+        if ERA5_DISPONIBLE:
+            vel_viento = float(np.sqrt(u**2 + v**2)) if 'u' in dir() else 0.0
+            if vel_viento < 3.0 or vel_viento > 8.0:
+                Fc_s1_original = Fc_s1
+                Fc_s1 = Fc_s1 * 0.50  # degradar 50% fuera del rango optimo
+                print(f"  S1 OK -- antiguedad: {s1_ant}d | Fc: {Fc_s1:.2f} (degradado 50% por viento={vel_viento:.1f}m/s fuera de 3-8m/s)")
+            else:
+                print(f"  S1 OK -- antiguedad: {s1_ant}d | Fc: {Fc_s1:.2f} (viento={vel_viento:.1f}m/s en rango optimo SAR)")
+        else:
+            print(f"  S1 OK -- antiguedad: {s1_ant}d | Fc: {Fc_s1:.2f}")
     else:
         print("  S1 sin dato reciente")
 except Exception as e:
@@ -532,9 +543,18 @@ print(f"  Bio: {n_bio} | Fisico: {n_fis} | Confianza: {CONFIANZA}")
 print(f"  Pesos: {', '.join([f'{k[:6]}:{v:.2f}' for k, v in W_activos.items()])}")
 sys.stdout.flush()
 
-# -- Contribuciones biologicas escalares aditivas (max 0.10 cada una)
-contrib_sst    = float(np.clip(sst_grad_medio * 0.10, 0, 0.10)) if SST_DISPONIBLE else 0.0
-contrib_viento = float(np.clip(indice_surgencia * 0.10, 0, 0.10)) if ERA5_DISPONIBLE else 0.0
+# -- Contribucion SST: aditiva acotada (gradiente termico local)
+contrib_sst = float(np.clip(sst_grad_medio * 0.10, 0, 0.10)) if SST_DISPONIBLE else 0.0
+
+# -- ERA5 como MULTIPLICADOR REGIONAL (no contribucion aditiva)
+# M_viento entre 0.80 (calma, sin surgencia) y 1.15 (surgencia alta activa)
+# Potencia las estructuras reales que SAR y batimetria detectan
+# pero si no hay estructura, el viento solo NO inventa un punto
+if ERA5_DISPONIBLE:
+    M_viento = float(np.clip(0.80 + indice_surgencia * 0.35, 0.80, 1.15))
+else:
+    M_viento = 1.0  # neutro si no hay dato de viento
+print(f"  M_viento (multiplicador ERA5): {M_viento:.3f} (ind_surg={indice_surgencia:.3f})")
 
 # -- Modificador de trampas estaticas segun condiciones dinamicas
 # Si hay surgencia activa, las zonas de retencion geometrica se potencian
@@ -544,7 +564,7 @@ if SST_DISPONIBLE and ERA5_DISPONIBLE:
         bonus_trampa = 0.08   # Surgencia alta + gradiente termico = trampas activas
     elif indice_surgencia >= 0.50:
         bonus_trampa = 0.04   # Surgencia moderada
-print(f"  Contrib SST: +{contrib_sst:.3f} | Contrib viento: +{contrib_viento:.3f} | Bonus trampa: +{bonus_trampa:.3f}")
+print(f"  Contrib SST: +{contrib_sst:.3f} | M_viento: x{M_viento:.3f} | Bonus trampa: +{bonus_trampa:.3f}")
 sys.stdout.flush()
 
 # ================================================================
@@ -666,10 +686,13 @@ for i in range(0, len(puntos_flat), 100):
                 score_base = float(p['mean'])
                 sector     = asignar_sector(lat_p, lon_p, float(p['dist_km']))
 
-                # Score absoluto: base + contribuciones aditivas + marea
-                # Marea: +0.05 LLENANTE, +0.02 PLEAMAR, 0.00 VACIANTE
+                # Score absoluto con nueva arquitectura:
+                # score_base se multiplica por M_viento (modulador regional ERA5)
+                # luego se suman contribuciones locales y marea
+                # Esto evita que el viento "fabrique" puntos verdes sin estructura real
+                score_con_viento = float(np.clip(score_base * M_viento, 0.0, 1.0))
                 score_abs = float(np.clip(
-                    score_base + contrib_sst + contrib_viento + penalizacion_mezcla + bonus_marea_global,
+                    score_con_viento + contrib_sst + penalizacion_mezcla + bonus_marea_global,
                     0.0, 1.0
                 ))
 
