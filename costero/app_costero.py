@@ -236,7 +236,7 @@ for sector in orden:
         hora_actual = datetime.now(LIMA_TZ).hour
         fase_ahora, alt_ahora, _ = fase_marea(
             LIMA_TZ.localize(datetime(hoy.year, hoy.month, hoy.day, hora_actual, 0, 0)).astimezone(timezone.utc))
-        flecha = "/\" if fase_ahora in ("LLENANTE","PLEAMAR") else ""
+        flecha = "(sube)" if fase_ahora in ("LLENANTE","PLEAMAR") else "(baja)"
         st.caption(f"Ahora ({hora_actual:02d}h): {flecha} {fase_ahora} {alt_ahora:+.2f}m  |  Pleamar: {max_idx:02d}h  |  Bajamar: {min_idx:02d}h")
 
         st.divider()
