@@ -22,7 +22,7 @@ import cdsapi
 import gspread
 from gspread_dataframe import set_with_dataframe
 from google.oauth2.service_account import Credentials as SACredentials
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import copernicusmarine
 import ee
 import warnings
