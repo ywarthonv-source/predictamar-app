@@ -12,7 +12,7 @@ LON_CHORRILLOS   = -77.021
 LAT_MIN_C        = -12.357
 LAT_MAX_C        = -11.957
 LON_MIN_C        = -77.241
-LON_MAX_C        = -77.001
+LON_MAX_C        = -77.035  # linea de costa aprox -77.027, margen de seguridad
 
 # -- Resolucion y grilla
 RADIO_MAX_KM     = 20
