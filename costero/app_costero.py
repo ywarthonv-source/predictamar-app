@@ -249,7 +249,12 @@ for sector in orden:
                 continue
             dist = to_float(zona.get("dist_km", 0))
             rol = str(zona.get("rol", ""))
-            rank = int(to_float(zona.get("rank_sector", 0)))
+            # Correccion: rank_sector puede venir como datetime, string o numero
+            rank_raw = zona.get("rank_sector", 0)
+            try:
+                rank = int(float(str(rank_raw).split()[0]))
+            except:
+                rank = 0
             tiempo = int(dist / 15 * 60)
 
             dlat = lat - LAT_CHORRILLOS
