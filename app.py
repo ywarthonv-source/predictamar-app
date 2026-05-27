@@ -38,6 +38,18 @@ if not st.session_state["autenticado"]:
     st.title("🎣 PredictaMAR")
     st.caption("Sistema de prediccion de zonas de pesca artesanal — Copernicus Marine Service")
     st.divider()
+    # Botones de acceso rapido
+    col_inv, col_web = st.columns(2)
+    with col_inv:
+        if st.button("Acceso Startup Chile", use_container_width=True, type="primary"):
+            st.session_state["autenticado"]    = True
+            st.session_state["usuario_actual"] = "invitado"
+            st.rerun()
+    with col_web:
+        st.link_button("Ver pagina web", "https://ywarthonv-source.github.io/predictamar-site/",
+                       use_container_width=True)
+
+    st.divider()
     st.subheader("Iniciar sesion")
     usuario = st.text_input("Usuario")
     clave   = st.text_input("Contrasena", type="password")
