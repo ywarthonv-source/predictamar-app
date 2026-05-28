@@ -37,7 +37,7 @@ IPO_DIAS_DEMERSALES = 5   # cachema, lorna, chauchilla
 # -- Decaimiento temporal Fc
 FC_ALOS2_MAX_DIAS = 14
 FC_S2_MAX_DIAS    = 5
-FC_S1_MAX_DIAS    = 3
+FC_S1_MAX_DIAS    = 6   # SAR util hasta 6 dias -- degradacion gradual
 
 # -- Adveccion
 ADV_HORAS_T8  = 8
