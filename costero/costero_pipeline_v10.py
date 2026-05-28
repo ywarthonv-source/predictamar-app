@@ -688,11 +688,23 @@ for i in range(0, len(puntos_flat), 100):
 
                 # Score absoluto con nueva arquitectura:
                 # score_base se multiplica por M_viento (modulador regional ERA5)
-                # luego se suman contribuciones locales y marea
-                # Esto evita que el viento "fabrique" puntos verdes sin estructura real
+                # luego se suman contribuciones locales, marea y bonus empirico
                 score_con_viento = float(np.clip(score_base * M_viento, 0.0, 1.0))
+
+                # -- Bonus empirico capa Christian (condicional a surgencia)
+                bonus_empirico = 0.0
+                for zona_emp in CHRISTIAN_ZONAS_EMPIRICAS:
+                    dist_emp = float(np.sqrt(
+                        ((lat_p - zona_emp["lat"]) * 111.0)**2 +
+                        ((lon_p - zona_emp["lon"]) * 111.0 * np.cos(np.radians(lat_p)))**2
+                    ))
+                    # Activar bonus si punto esta a menos de 1km de zona empirica
+                    # Y la surgencia supera el umbral minimo
+                    if dist_emp < 1.0 and indice_surgencia >= zona_emp["surgencia_min"]:
+                        bonus_empirico = max(bonus_empirico, zona_emp["bonus"])
+
                 score_abs = float(np.clip(
-                    score_con_viento + contrib_sst + penalizacion_mezcla + bonus_marea_global,
+                    score_con_viento + contrib_sst + penalizacion_mezcla + bonus_marea_global + bonus_empirico,
                     0.0, 1.0
                 ))
 
