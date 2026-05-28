@@ -573,6 +573,25 @@ sys.stdout.flush()
 # Zona media 3-10 km:  paso 0.0027 grados (~300m)
 # Zona abierta 10-20km: paso 0.0045 grados (~500m)
 # ================================================================
+# ================================================================
+# MASCARA DE TIERRA -- linea de costa Costa Verde Lima
+# ================================================================
+COSTA_VERDE_MASCARA = [
+    (-12.100, -12.080, -77.055),
+    (-12.120, -12.100, -77.050),
+    (-12.140, -12.120, -77.045),
+    (-12.160, -12.140, -77.040),
+    (-12.180, -12.160, -77.038),
+    (-12.200, -12.180, -77.035),
+]
+
+def punto_en_tierra(lat, lon):
+    for lat_min, lat_max, lon_max in COSTA_VERDE_MASCARA:
+        if lat_min <= lat <= lat_max:
+            if lon >= lon_max:
+                return True
+    return False
+
 print("\nGenerando grilla variable...")
 
 puntos_flat = []
@@ -581,6 +600,8 @@ lats_c = np.arange(LAT_MIN_C, LAT_MAX_C, 0.0009)
 lons_c = np.arange(LON_MIN_C, LON_MAX_C, 0.0009)
 for la in lats_c:
     for lo in lons_c:
+        if punto_en_tierra(float(la), float(lo)):
+            continue  # excluir puntos en tierra
         d = dist_km(LAT_CHORRILLOS, LON_CHORRILLOS, float(la), float(lo))
         if d <= 3.0 and d >= RADIO_ORILLA_KM:
             puntos_flat.append((float(la), float(lo), d))
@@ -590,6 +611,8 @@ lats_m = np.arange(LAT_MIN_C, LAT_MAX_C, 0.0027)
 lons_m = np.arange(LON_MIN_C, LON_MAX_C, 0.0027)
 for la in lats_m:
     for lo in lons_m:
+        if punto_en_tierra(float(la), float(lo)):
+            continue  # excluir puntos en tierra
         d = dist_km(LAT_CHORRILLOS, LON_CHORRILLOS, float(la), float(lo))
         if d > 3.0 and d <= 10.0:
             puntos_flat.append((float(la), float(lo), d))
@@ -599,6 +622,8 @@ lats_a = np.arange(LAT_MIN_C, LAT_MAX_C, 0.0045)
 lons_a = np.arange(LON_MIN_C, LON_MAX_C, 0.0045)
 for la in lats_a:
     for lo in lons_a:
+        if punto_en_tierra(float(la), float(lo)):
+            continue  # excluir puntos en tierra
         d = dist_km(LAT_CHORRILLOS, LON_CHORRILLOS, float(la), float(lo))
         if d > 10.0 and d <= RADIO_MAX_KM:
             puntos_flat.append((float(la), float(lo), d))
