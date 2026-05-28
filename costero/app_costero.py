@@ -197,9 +197,9 @@ st.caption("Toca 'Ver en mapa' para abrir el pin en Google Maps. Guarda captura 
 
 LAT_CHORRILLOS = -12.157
 LON_CHORRILLOS = -77.021
-orden = ["COSTERO", "SUR", "NORTE", "OESTE"]
-nombres = {"COSTERO": "Orilla (0-3 km)", "SUR": "Sur - Morro Solar",
-           "NORTE": "Norte - Miraflores", "OESTE": "Mar abierto"}
+orden = ["COSTERO", "SUR", "OESTE"]
+nombres = {"COSTERO": "Orilla (0-6 km)", "SUR": "Sur - Morro Solar",
+           "OESTE": "Mar abierto"}
 dirs_esp = ["Norte","NorEste","Este","SurEste","Sur","SurOeste","Oeste","NorOeste"]
 
 for sector in orden:
