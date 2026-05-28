@@ -15,7 +15,7 @@ LON_MIN_C        = -77.241
 LON_MAX_C        = -77.035  # linea de costa aprox -77.027, margen de seguridad
 
 # -- Resolucion y grilla
-RADIO_MAX_KM     = 20
+RADIO_MAX_KM     = 7   # Radio real operacional de Christian con motor 15HP
 RADIO_ORILLA_KM  = 0.5
 
 # -- Buffer pixel mixto
@@ -96,7 +96,32 @@ CONFIANZA_BAJA  = 0.25
 # -- Historial
 HISTORIAL_DIAS = 90
 
+# -- Perfil operacional Christian (primer piloto)
+CHRISTIAN_RADIO_KM     = 7.0      # radio real con motor 15HP
+CHRISTIAN_PROF_MAX_M   = 3.5      # altura maxima de red
+CHRISTIAN_ESPECIES     = ["cachema", "lorna", "pejerrey", "machete", "sardina"]
+
+# -- Capa empirica Christian v1.0 (primer punto validado en campo 27 mayo 2026)
+# Formato: (lat, lon, especie_principal, condicion_activacion, bonus)
+# condicion_activacion: surgencia minima para activar el bonus
+CHRISTIAN_ZONAS_EMPIRICAS = [
+    {
+        "lat": -12.1338782,
+        "lon": -77.0586627,
+        "nombre": "Zona principal Christian -- validada 27may2026",
+        "especie": "cachema",
+        "surgencia_min": 0.60,   # solo activa si surgencia >= 60%
+        "bonus": 0.20,           # bonus +20% cuando condicion activa
+        "hora_optima": "17:30",  # hora de mejor captura observada
+        "notas": "Agua lechosa turbia, lobos marinos activos, ~2 baldes cachema"
+    }
+]
+
+# -- Zonas de exclusion por fondo rocoso (red se rompe)
+# A completar con Christian en proxima sesion
+CHRISTIAN_ZONAS_ROCOSAS = []  # pendiente: mapeo con Christian
+
 # -- Version
-VERSION        = "v1.1"
-NOMBRE_SISTEMA = "PredictaMAR Costero v1.1"
+VERSION        = "v1.2"
+NOMBRE_SISTEMA = "PredictaMAR Costero v1.2"
 PUERTO_ORIGEN  = "Puerto Chorrillos"
