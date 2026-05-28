@@ -206,7 +206,16 @@ for sector in orden:
     df_sec = df[df["sector"] == sector].copy() if "sector" in df.columns else pd.DataFrame()
     if len(df_sec) == 0:
         continue
-    df_sec["rank_num"] = pd.to_numeric(df_sec.get("rank_sector", 0), errors="coerce").fillna(99)
+    # Ordenar por rank -- extraer numero del rank_sector
+    def extract_rank(val):
+        try:
+            s = str(val)
+            if ":" in s and "-" in s:
+                return int(s.split(":")[-1].split(".")[0].strip())
+            return int(float(s))
+        except:
+            return 99
+    df_sec["rank_num"] = df_sec["rank_sector"].apply(extract_rank)
     df_sec = df_sec.sort_values("rank_num").reset_index(drop=True)
 
     with st.expander(f"{nombres.get(sector, sector)} -- {len(df_sec)} puntos", expanded=(sector=="COSTERO")):
@@ -252,9 +261,17 @@ for sector in orden:
             # Correccion: rank_sector puede venir como datetime, string o numero
             rank_raw = zona.get("rank_sector", 0)
             try:
-                rank = int(float(str(rank_raw).split()[0]))
+                # Si es datetime tipo "2026-01-01 00:00:02", extraer segundos
+                s = str(rank_raw)
+                if ":" in s and "-" in s:
+                    # Es un datetime -- extraer el segundo campo de tiempo
+                    rank = int(s.split(":")[-1].split(".")[0].strip())
+                else:
+                    rank = int(float(s))
+                if rank == 0:
+                    rank = 1
             except:
-                rank = 0
+                rank = 1
             tiempo = int(dist / 15 * 60)
 
             dlat = lat - LAT_CHORRILLOS
@@ -269,8 +286,25 @@ for sector in orden:
             else:
                 label = f"[{rank}] Refugio"
 
+            # Score local como porcentaje
+            score_loc = to_float(zona.get("score_local", 0))
+            score_pct = int(score_loc * 100)
+
+            # Coordenada de adveccion -- donde se movio el agua en 16h
+            lat16 = to_float(zona.get("lat_T16", 0))
+            lon16 = to_float(zona.get("lon_T16", 0))
+            desp  = to_float(zona.get("desp_km", 0))
+            dir_adv = str(zona.get("direccion", ""))
+
             gmap = f"https://www.google.com/maps?q={lat},{lon}&z=14"
-            st.markdown(f"**{label}** | {dist:.1f} km | ~{tiempo} min | Hacia el {dir_s} | [Ver en mapa]({gmap})")
+
+            # Linea principal del punto
+            st.markdown(f"**{label}** ({score_pct}%) | {dist:.1f} km | ~{tiempo} min | Hacia el {dir_s} | [Ver en mapa]({gmap})")
+
+            # Coordenada de adveccion si es valida
+            if desp > 0.5 and abs(lat16) > 1 and abs(lon16) > 1:
+                gmap16 = f"https://www.google.com/maps?q={lat16},{lon16}&z=14"
+                st.markdown(f"  Si no hay actividad: el agua se movio {desp:.1f} km al {dir_adv} -- [Ver punto sugerido]({gmap16})")
 
 st.divider()
 st.caption("Antes de salir: guarda captura de pantalla del mapa. No tendras senal en el mar.")
