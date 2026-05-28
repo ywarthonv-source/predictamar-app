@@ -301,8 +301,8 @@ for sector in orden:
             # Linea principal del punto
             st.markdown(f"**{label}** ({score_pct}%) | {dist:.1f} km | ~{tiempo} min | Hacia el {dir_s} | [Ver en mapa]({gmap})")
 
-            # Coordenada de adveccion si es valida
-            if desp > 0.5 and abs(lat16) > 1 and abs(lon16) > 1:
+            # Coordenada de adveccion -- solo si esta dentro del radio operacional de Christian (7km)
+            if desp > 0.5 and desp <= 7.0 and abs(lat16) > 1 and abs(lon16) > 1:
                 gmap16 = f"https://www.google.com/maps?q={lat16},{lon16}&z=14"
                 st.markdown(f"  Si no hay actividad: el agua se movio {desp:.1f} km al {dir_adv} -- [Ver punto sugerido]({gmap16})")
 
