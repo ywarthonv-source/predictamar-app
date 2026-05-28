@@ -12,10 +12,11 @@ LON_CHORRILLOS   = -77.021
 LAT_MIN_C        = -12.357
 LAT_MAX_C        = -11.957
 LON_MIN_C        = -77.241
-LON_MAX_C        = -77.035  # linea de costa aprox -77.027, margen de seguridad
+LON_MAX_C        = -77.060  # corregido: Costa Verde Miraflores en -77.050, margen seguridad
 
 # -- Resolucion y grilla
-RADIO_MAX_KM     = 7   # Radio real operacional de Christian con motor 15HP
+RADIO_MAX_KM     = 7
+RADIO_COSTERO_KM  = 6    # ampliado: captura zona de Christian (-12.1338, -77.0586)   # Radio real operacional de Christian con motor 15HP
 RADIO_ORILLA_KM  = 0.5
 
 # -- Buffer pixel mixto
