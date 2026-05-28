@@ -197,8 +197,8 @@ def asignar_sector(lat, lon, dist):
     dlat = lat - LAT_CHORRILLOS
     dlon = lon - LON_CHORRILLOS
 
-    # Sector costero inmediato
-    if dist <= 3.0:
+    # Sector costero ampliado a 6km -- captura zona operacional de Christian
+    if dist <= 6.0:
         return "COSTERO"
 
     # Norte: hacia Miraflores (lat mas al norte = valor menos negativo)
@@ -603,7 +603,7 @@ for la in lats_c:
         if punto_en_tierra(float(la), float(lo)):
             continue  # excluir puntos en tierra
         d = dist_km(LAT_CHORRILLOS, LON_CHORRILLOS, float(la), float(lo))
-        if d <= 3.0 and d >= RADIO_ORILLA_KM:
+        if d <= 6.0 and d >= RADIO_ORILLA_KM:
             puntos_flat.append((float(la), float(lo), d))
 
 # Grilla media
@@ -614,7 +614,7 @@ for la in lats_m:
         if punto_en_tierra(float(la), float(lo)):
             continue  # excluir puntos en tierra
         d = dist_km(LAT_CHORRILLOS, LON_CHORRILLOS, float(la), float(lo))
-        if d > 3.0 and d <= 10.0:
+        if d > 6.0 and d <= 10.0:
             puntos_flat.append((float(la), float(lo), d))
 
 # Grilla abierta
