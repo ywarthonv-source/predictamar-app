@@ -46,8 +46,8 @@ if not st.session_state["autenticado"]:
             st.session_state["usuario_actual"] = "invitado"
             st.rerun()
     with col_web:
- st.link_button("Ver pagina web", "https://predictamaocenaia.lovable.app/",
-               use_container_width=True)
+st.link_button("Ver pagina web", "https://predictamaocenaia.lovable.app/",
+                       use_container_width=True)
 
     st.divider()
     st.subheader("Iniciar sesion")
