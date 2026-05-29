@@ -40,14 +40,16 @@ if not st.session_state["autenticado"]:
     st.divider()
     # Botones de acceso rapido
     col_inv, col_web = st.columns(2)
+   col_inv, col_web = st.columns(2)
     with col_inv:
         if st.button("Acceso Startup Chile", use_container_width=True, type="primary"):
             st.session_state["autenticado"]    = True
             st.session_state["usuario_actual"] = "invitado"
             st.rerun()
     with col_web:
-st.link_button("Ver pagina web", "https://predictamaocenaia.lovable.app/",
+        st.link_button("Ver pagina web", "https://predictamaocenaia.lovable.app/",
                        use_container_width=True)
+    st.divider()
 
     st.divider()
     st.subheader("Iniciar sesion")
