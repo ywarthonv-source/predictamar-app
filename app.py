@@ -38,9 +38,9 @@ if not st.session_state["autenticado"]:
     st.title("🎣 PredictaMAR")
     st.caption("Sistema de prediccion de zonas de pesca artesanal — Copernicus Marine Service")
     st.divider()
+
     # Botones de acceso rapido
     col_inv, col_web = st.columns(2)
-   col_inv, col_web = st.columns(2)
     with col_inv:
         if st.button("Acceso Startup Chile", use_container_width=True, type="primary"):
             st.session_state["autenticado"]    = True
@@ -49,7 +49,6 @@ if not st.session_state["autenticado"]:
     with col_web:
         st.link_button("Ver pagina web", "https://predictamaocenaia.lovable.app/",
                        use_container_width=True)
-    st.divider()
 
     st.divider()
     st.subheader("Iniciar sesion")
@@ -200,12 +199,8 @@ def direccion_cardinal(lat1, lon1, lat2, lon2):
         else:                        base = "suroeste"
     return base
 
-# ── Advección táctica (versión app sin NetCDF) ────────────────────
+# ── Advección táctica ─────────────────────────────────────────────
 def calcular_adveccion_app(lat_punto, lon_punto, df_zona, horas_latencia=24):
-    """
-    Estima desplazamiento advectivo usando curr_mean_7d del cerebro.
-    Aproxima dirección usando gradiente de SST como proxy de flujo dominante.
-    """
     if horas_latencia <= 24:
         factor = 1.0
         confianza = "ALTA"
@@ -214,63 +209,43 @@ def calcular_adveccion_app(lat_punto, lon_punto, df_zona, horas_latencia=24):
         confianza = "MEDIA"
     else:
         return lat_punto, lon_punto, 0.0, "BAJA"
-
-    # Punto más cercano en el df para obtener velocidad de corriente
     if df_zona.empty:
         return lat_punto, lon_punto, 0.0, confianza
-
     df_zona = df_zona.copy()
     df_zona["_d"] = haversine_nm(lat_punto, lon_punto,
                                   df_zona["lat"].values,
                                   df_zona["lon"].values)
     vecinos = df_zona.nsmallest(5, "_d")
-
     curr_speed = float(vecinos["curr_mean_7d"].mean())
     if np.isnan(curr_speed) or curr_speed < 0.05:
         return lat_punto, lon_punto, 0.0, confianza
-
-    # Estimar dirección dominante usando gradiente de SST
-    # SST decrece hacia la costa (surgencia) → flujo predominante hacia el noroeste en HCS
     sst_vals = vecinos["sst_mean_7d"].values
     lat_vals  = vecinos["lat"].values
     lon_vals  = vecinos["lon"].values
-
-    # Gradiente SST como proxy de dirección de corriente
     if len(vecinos) >= 3:
         dlat_sst = np.polyfit(lat_vals, sst_vals, 1)[0]
         dlon_sst = np.polyfit(lon_vals, sst_vals, 1)[0]
-        # Corriente fluye de cálido a frío (gradiente negativo)
         vo_proxy = -dlat_sst * 0.1
         uo_proxy = -dlon_sst * 0.1
     else:
-        # Default HCS: corriente hacia el noroeste
         vo_proxy = 0.05
         uo_proxy = -0.08
-
-    # Normalizar a velocidad real
     mag = np.sqrt(vo_proxy**2 + uo_proxy**2)
     if mag > 0:
         vo_n = (vo_proxy / mag) * curr_speed
         uo_n = (uo_proxy / mag) * curr_speed
     else:
         vo_n, uo_n = 0.0, 0.0
-
     seg = horas_latencia * 3600 * factor
     nueva_lat = lat_punto + (vo_n * seg) / 111000
     nueva_lon = lon_punto + (uo_n * seg) / (111000 * np.cos(np.deg2rad(lat_punto)))
-
     dist = float(haversine_nm(lat_punto, lon_punto,
                                np.array([nueva_lat]),
                                np.array([nueva_lon]))[0] * 1.852)
-
     return nueva_lat, nueva_lon, dist, confianza
 
-# ── Refinamiento con cerebro (equivalente OLCI en app) ────────────
+# ── Refinamiento con cerebro ──────────────────────────────────────
 def refinar_con_cerebro(lat_hotspot, lon_hotspot, df_zona, radio_grados=0.15):
-    """
-    Versión app de refinar_con_olci.
-    Busca el cluster de mayor CHL dentro de radio en el cerebro.
-    """
     mask = (
         (df_zona["lat"] >= lat_hotspot - radio_grados) &
         (df_zona["lat"] <= lat_hotspot + radio_grados) &
@@ -280,18 +255,15 @@ def refinar_con_cerebro(lat_hotspot, lon_hotspot, df_zona, radio_grados=0.15):
     zona = df_zona[mask].copy()
     if len(zona) < 3:
         return lat_hotspot, lon_hotspot, False
-
     chl_p90 = zona["chl_mean_7d"].quantile(0.90)
     cluster = zona[zona["chl_mean_7d"] >= chl_p90]
     if cluster.empty:
         return lat_hotspot, lon_hotspot, False
-
-    # Centroide ponderado por CHL
     lat_c = float(np.average(cluster["lat"], weights=cluster["chl_mean_7d"]))
     lon_c = float(np.average(cluster["lon"], weights=cluster["chl_mean_7d"]))
     return lat_c, lon_c, True
 
-# ── Macro filter COMPLETO (igual que Colab) ───────────────────────
+# ── Macro filter ──────────────────────────────────────────────────
 def macro_filter(df):
     chl       = df["chl_mean_7d"].median()
     grad_sst  = df["grad_sst_mean_7d"].median()
@@ -302,45 +274,34 @@ def macro_filter(df):
     sla       = df["sla_mean_7d"].fillna(0).median() if "sla_mean_7d" in df.columns else 0
     ekman     = df["ekman_7d"].fillna(0).median() if "ekman_7d" in df.columns else 0
     grad_sla  = df["grad_sla_mean_7d"].fillna(0).median() if "grad_sla_mean_7d" in df.columns else 0
-
     sc_chl    = min(chl / 1.0, 1.0)
     sc_grad   = min(grad_sst / 0.05, 1.0)
     sc_estab  = max(estab, 0)
     sc_curr   = 1.0 if 0.1 <= curr <= 0.6 else 0.3
     sc_persist = float(persist)
-
-    # SLA dinámico
     sla_p10 = df["sla_mean_7d"].quantile(0.10) if "sla_mean_7d" in df.columns else -0.05
     sla_p25 = df["sla_mean_7d"].quantile(0.25) if "sla_mean_7d" in df.columns else -0.02
     sla_p50 = df["sla_mean_7d"].quantile(0.50) if "sla_mean_7d" in df.columns else 0.0
     sla_p75 = df["sla_mean_7d"].quantile(0.75) if "sla_mean_7d" in df.columns else 0.05
-
     if sla < sla_p10:        sc_sla = 1.0
     elif sla < sla_p25:      sc_sla = 0.80
     elif sla < sla_p75:      sc_sla = 0.55
     else:                    sc_sla = 0.20
-
     sla_trend = df["sla_mean_7d"].mean() - sla_p75 if "sla_mean_7d" in df.columns else 0
     if sla_trend < -0.02:    sc_sla = min(sc_sla + 0.15, 1.0)
     if sla < sla_p25 and chl > 1.0: sc_sla = min(sc_sla + 0.10, 1.0)
-
-    # Gradiente SLA
     grad_sla_p75 = df["grad_sla_mean_7d"].fillna(0).quantile(0.75) if "grad_sla_mean_7d" in df.columns else 0
     sc_grad_sla  = min(grad_sla / max(grad_sla_p75, 1e-6), 1.0)
     if grad_sla > grad_sla_p75 and sla < sla_p50:
         sc_sla = min(sc_sla + 0.12, 1.0)
-
-    # Ekman — índice de surgencia
     ekman_p75 = df["ekman_7d"].fillna(0).quantile(0.75) if "ekman_7d" in df.columns else 0
     if ekman > ekman_p75:    sc_ekman = 1.0
     elif ekman > 0:          sc_ekman = 0.7
     elif ekman > -0.5:       sc_ekman = 0.4
     else:                    sc_ekman = 0.1
-
     macro_score = (0.30 * sc_chl + 0.16 * sc_grad + 0.16 * sc_persist +
                    0.12 * sc_sla + 0.10 * sc_ekman + 0.08 * sc_grad_sla +
                    0.05 * sc_estab + 0.03 * sc_curr)
-
     razones = []
     if chl < 0.5:            razones.append("clorofila baja — poca comida en el agua")
     if grad_sst < 0.02:      razones.append("sin frentes termicos — mar plano")
@@ -350,15 +311,12 @@ def macro_filter(df):
     if estab < 0.2:          razones.append("condiciones inestables en los ultimos 7 dias")
     if curr > 0.8:           razones.append("corrientes muy fuertes — dificil concentracion")
     if ekman < -1.0:         razones.append("viento del norte — sin surgencia activa esta semana")
-
     zona_surgencia = (dias_consec >= 5 and
                       ("sla_mean_7d" in df.columns and sla < sla_p25) and
                       ekman > 0)
-
     if macro_score >= 0.65:  semaforo = "VERDE"
     elif macro_score >= 0.55: semaforo = "AMARILLO"
     else:                    semaforo = "ROJO"
-
     return semaforo, macro_score, razones, zona_surgencia
 
 # ── Scoring ───────────────────────────────────────────────────────
@@ -373,7 +331,6 @@ def calcular_score(df, rule):
     d["grad_sst_mean_7d"] = d["grad_sst_mean_7d"].fillna(0)
     if d.empty:
         return d
-
     chl_min  = float(rule.get("chl_min",  0))
     chl_max  = float(rule.get("chl_max",  99))
     sst_min  = float(rule["sst_min_c"])
@@ -381,25 +338,21 @@ def calcular_score(df, rule):
     curr_max = float(rule["curr_ok_max_ms"])
     sal_min  = float(rule["sal_min"])
     sal_max  = float(rule["sal_max"])
-
     chl_thr   = max(d["chl_mean_7d"].quantile(float(rule["chl_percentile_high"])), 0.001)
     sc_local  = np.clip(d["chl_mean_7d"] / chl_thr, 0, 2) / 2
     chl_range = max(chl_max - chl_min, 0.01)
     sc_abs    = np.clip((d["chl_mean_7d"] - chl_min) / chl_range, 0, 1)
     d["sc_chl"] = 0.5 * sc_local + 0.5 * sc_abs
     d.loc[d["chl_mean_7d"] > chl_max, "sc_chl"] *= 0.6
-
     sv = d["sst_mean_7d"].values
     sc = np.ones(len(d))
     sc[sv > sst_max] = np.clip(1 - (sv[sv > sst_max] - sst_max) / 3, 0, 1)
     sc[sv < sst_min] = np.clip(1 - (sst_min - sv[sv < sst_min]) / 3, 0, 1)
     d["sc_sst"]  = sc
     d["sc_grad"] = d["front_score_7d"].fillna(0)
-
     cv  = d["chl_cv_7d"]
     q80 = max(cv.quantile(0.8), 1e-6)
     d["sc_stab"] = np.clip(1 - cv / q80, 0, 1)
-
     cv2  = d["curr_mean_7d"].values
     c_lo = 0.10
     c_hi = curr_max * 0.60
@@ -410,12 +363,10 @@ def calcular_score(df, rule):
     sc2[m_med] = np.clip(1 - 0.5 * (cv2[m_med] - c_hi) / (curr_max - c_hi), 0.5, 1.0)
     sc2[cv2 > curr_max] = np.clip(1 - (cv2[cv2 > curr_max] - curr_max) / curr_max, 0, 0.5)
     d["sc_curr"] = sc2
-
     sal_mid   = (sal_min + sal_max) / 2
     sal_range = max((sal_max - sal_min) / 2, 0.01)
     d["sc_sal"]  = np.clip(1 - np.abs(d["sal_mean_7d"] - sal_mid) / sal_range, 0, 1)
     d["sc_gchl"] = d["grad_chl_pctl"].fillna(0) if "grad_chl_pctl" in d.columns else 0.5
-
     w = {
         "chl":  float(rule["w_chl"]),
         "sst":  float(rule["w_sst"]),
@@ -435,7 +386,6 @@ def calcular_score(df, rule):
     if tw > 0:
         d["score"] = d["score"] / tw
     d["score"] = d["score"].clip(0, 1)
-
     fl = []
     al = []
     for _, r in d.iterrows():
@@ -512,7 +462,7 @@ def generar_tarjeta_roja_bytes(species, modo, razones):
     buf.seek(0)
     return buf
 
-# ── Generar imagen (equivalente Colab con advección) ──────────────
+# ── Generar imagen ────────────────────────────────────────────────
 def generar_imagen_bytes(idx, row, species, modo, fase_emoji, fase_nombre, zona_surgencia=False):
     sp    = species.strip().upper()
     ch, cb = COLORES.get(sp, ("#0D2B55", "#E8F4FF"))
@@ -520,15 +470,12 @@ def generar_imagen_bytes(idx, row, species, modo, fase_emoji, fase_nombre, zona_
     hr    = HORARIOS.get(sp, "05:00-08:00 / 16:00-18:30")
     fl    = row.get("flags", {})
     al    = row.get("alert", "")
-
     fig, ax = plt.subplots(figsize=(5, 9.5))
     ax.set_xlim(0, 10)
     ax.set_ylim(0, 19)
     ax.axis("off")
     fig.patch.set_facecolor(cb)
     ax.set_facecolor(cb)
-
-    # Header
     ax.add_patch(FancyBboxPatch((0, 17.5), 10, 1.5,
                   boxstyle="round,pad=0.1", facecolor=ch, edgecolor="none"))
     ax.text(5, 18.55, "PREDICTAMAR  " + em + "  " + sp,
@@ -536,21 +483,15 @@ def generar_imagen_bytes(idx, row, species, modo, fase_emoji, fase_nombre, zona_
             fontweight="bold", color="white", fontfamily="monospace")
     ax.text(5, 18.05, "Zona: " + modo,
             ha="center", va="center", fontsize=8, color="white")
-
-    # Número
     ax.add_patch(plt.Circle((5, 16.8), 0.65, color=ch, zorder=3))
     ax.text(5, 16.8, str(idx + 1),
             ha="center", va="center", fontsize=18,
             fontweight="bold", color="white", zorder=4)
-
-    # Índice operativo
     indice = int(row["prob"])
     ic     = "#1B5E20" if indice >= 70 else "#E65100" if indice >= 50 else "#B71C1C"
     ax.text(5, 15.8, "Indice operativo: " + str(indice) + "%",
             ha="center", va="center", fontsize=14,
             fontweight="bold", color=ic)
-
-    # Surgencia / alerta
     if zona_surgencia:
         ax.text(5, 15.35, "⭐ ZONA DE SURGENCIA ACTIVA",
                 ha="center", va="center", fontsize=8,
@@ -559,10 +500,7 @@ def generar_imagen_bytes(idx, row, species, modo, fase_emoji, fase_nombre, zona_
         ax.text(5, 15.3, "  " + al,
                 ha="center", va="center", fontsize=7.5,
                 color="#B71C1C", fontstyle="italic")
-
     ax.plot([0.5, 9.5], [15.0, 15.0], color=ch, linewidth=1.5, alpha=0.4)
-
-    # Coordenadas
     ax.text(0.5, 14.6, "📍", fontsize=11, va="center")
     olci_ok  = row.get("cerebro_refinado", False)
     lat_show = row.get("lat_refinada", row["lat"]) if olci_ok else row["lat"]
@@ -571,8 +509,6 @@ def generar_imagen_bytes(idx, row, species, modo, fase_emoji, fase_nombre, zona_
     ax.text(1.3, 14.6,
             str(abs(lat_show))[:7] + "S,  " + str(abs(lon_show))[:7] + "W",
             fontsize=10, va="center", color=coord_color, fontweight="bold")
-
-    # Radio activo estimado
     if olci_ok:
         ax.text(1.3, 14.15,
                 "Zona activa estimada: radio aprox. 2 km  ✓ CHL cluster",
@@ -581,23 +517,18 @@ def generar_imagen_bytes(idx, row, species, modo, fase_emoji, fase_nombre, zona_
         ax.text(1.3, 14.15,
                 "Zona activa estimada: radio aprox. 6 km",
                 fontsize=7.5, va="center", color="#1565C0", fontstyle="italic")
-
-    # ── Guía táctica de advección ──────────────────────────────────
     adv_dist = float(row.get("adv_dist_km", 0))
     if adv_dist > 0.5:
         adv_lat  = float(row.get("adv_lat", row["lat"]))
         adv_lon  = float(row.get("adv_lon", row["lon"]))
         dir_txt  = direccion_cardinal(row["lat"], row["lon"], adv_lat, adv_lon)
         confianza = row.get("adv_confianza", "MEDIA")
-
-        # Calcular punto guía a 6km en esa dirección
         fguia   = 6.0 / 111.0
         dlat    = adv_lat - row["lat"]
         dlon    = adv_lon - row["lon"]
         mag     = max(abs(dlat) + abs(dlon), 1e-9)
         glat    = row["lat"] + (dlat / mag) * fguia
         glon    = row["lon"] + (dlon / mag) * fguia / np.cos(np.deg2rad(row["lat"]))
-
         ax.text(0.5, 13.65, "🌊", fontsize=9, va="center")
         ax.text(1.3, 13.65,
                 "Si no encuentra actividad, avance hacia el " + dir_txt,
@@ -610,11 +541,8 @@ def generar_imagen_bytes(idx, row, species, modo, fase_emoji, fase_nombre, zona_
         y_vars = 12.8
     else:
         y_vars = 13.7
-
     ax.plot([0.5, 9.5], [y_vars - 0.2, y_vars - 0.2],
             color=ch, linewidth=1, alpha=0.3)
-
-    # Variables oceanográficas
     vars_ = [
         ("🌡️", "Temp. superficial",  str(round(row["sst_mean_7d"],  2))  + " C",     fl.get("SST",  True)),
         ("🧂",  "Salinidad",          str(round(row["sal_mean_7d"],  2))  + " UPS",   fl.get("Sal",  True)),
@@ -624,7 +552,6 @@ def generar_imagen_bytes(idx, row, species, modo, fase_emoji, fase_nombre, zona_
         ("📏",  "Distancia",          str(round(row["dist_km"],      1))  + " km",    True),
         (fase_emoji, "Fase lunar",    fase_nombre,                                    True),
     ]
-
     y = y_vars - 0.5
     for ev, lb, vl, ok in vars_:
         sc2 = "#1B5E20" if ok else "#B71C1C"
@@ -638,8 +565,6 @@ def generar_imagen_bytes(idx, row, species, modo, fase_emoji, fase_nombre, zona_
         ax.plot([0.5, 9.5], [y - 0.32, y - 0.32],
                 color="#CCCCCC", linewidth=0.5, alpha=0.6)
         y -= 0.65
-
-    # Horario
     ax.add_patch(FancyBboxPatch((0.3, y - 0.2), 9.4, 0.6,
                   boxstyle="round,pad=0.1", facecolor=ch,
                   alpha=0.15, edgecolor=ch, linewidth=1))
@@ -647,12 +572,9 @@ def generar_imagen_bytes(idx, row, species, modo, fase_emoji, fase_nombre, zona_
     ax.text(1.3, y + 0.1, "Mejor hora:  " + hr,
             fontsize=8.5, va="center", color=ch, fontweight="bold")
     y -= 0.75
-
-    # Condiciones
     ct = "  ".join([("OK " if v else "NO ") + k for k, v in fl.items()])
     ax.text(5, y, ct, ha="center", va="center", fontsize=8, color="#444444")
     y -= 0.45
-
     ax.plot([0.5, 9.5], [y + 0.15, y + 0.15], color=ch, linewidth=1, alpha=0.3)
     ax.text(5, y - 0.1,
             "PredictaMAR v5.2 · Copernicus Marine Service · Peru",
@@ -662,7 +584,6 @@ def generar_imagen_bytes(idx, row, species, modo, fase_emoji, fase_nombre, zona_
             "Indice operativo — no es probabilidad estadistica",
             ha="center", va="center", fontsize=6,
             color="#AAAAAA", style="italic")
-
     plt.tight_layout(pad=0.5)
     buf = io.BytesIO()
     plt.savefig(buf, format="png", dpi=150,
@@ -674,12 +595,10 @@ def generar_imagen_bytes(idx, row, species, modo, fase_emoji, fase_nombre, zona_
 # ══════════════════════════════════════════════════════════════════
 # INTERFAZ STREAMLIT
 # ══════════════════════════════════════════════════════════════════
-
 st.title("🎣 PredictaMAR")
 st.caption("Sistema de prediccion de zonas de pesca artesanal — Copernicus Marine Service · Peru")
 
 features, species_rules = cargar_cerebro()
-
 if features is None:
     st.error("No se pudo cargar el cerebro. Verifica la conexion con Drive.")
     st.stop()
@@ -687,7 +606,6 @@ if features is None:
 st.success("Datos cargados: " + str(len(features)) + " puntos oceanograficos")
 st.divider()
 
-# ── Formulario ────────────────────────────────────────────────────
 col1, col2 = st.columns(2)
 with col1:
     especie = st.selectbox("🐟 Especie objetivo", options=list(species_rules["species"]))
@@ -701,7 +619,6 @@ modo_busqueda = st.radio(
 )
 
 puerto = puerto_desde = puerto_hasta = lat_input = lon_input = None
-
 if modo_busqueda == "Por puerto":
     puerto = st.selectbox("Puerto de salida", list(PUERTOS.keys()))
 elif modo_busqueda == "Entre dos puertos":
@@ -716,11 +633,8 @@ else:
 top_n  = st.selectbox("Numero de puntos recomendados", [1, 2, 3, 4, 5], index=2)
 buscar = st.button("🔍 Buscar zonas de pesca", use_container_width=True, type="primary")
 
-# ── Ejecutar búsqueda ─────────────────────────────────────────────
 if buscar:
     fase_emoji, fase_nombre = get_fase_lunar()
-
-    # Resolver centro
     if puerto:
         clat, clon = PUERTOS[puerto]
         modo = puerto
@@ -735,23 +649,18 @@ if buscar:
         modo = "(" + str(lat_input) + ", " + str(lon_input) + ")"
 
     radio_nm = radio_km / 1.852
-
-    # Filtrar por radio
     df = features.copy()
     df["dist_nm"] = haversine_nm(clat, clon, df["lat"].values, df["lon"].values)
     df = df[df["dist_nm"] <= radio_nm].copy()
-
     if puerto_desde and puerto_hasta:
         df = df[
             (df["lat"] >= min(la1, la2) - 0.5) & (df["lat"] <= max(la1, la2) + 0.5) &
             (df["lon"] >= min(lo1, lo2) - 0.8) & (df["lon"] <= max(lo1, lo2) + 0.8)
         ].copy()
-
     if df.empty:
         st.warning("Sin puntos en la zona. Amplia el radio.")
         st.stop()
 
-    # ── MacroFilter COMPLETO ──────────────────────────────────────
     semaforo, macro_score, razones, zona_surgencia = macro_filter(df)
     sem_emoji, sem_label, sem_color = indice_a_semaforo(macro_score)
     surgencia_txt = " ⭐ SURGENCIA ACTIVA" if zona_surgencia else ""
@@ -760,7 +669,6 @@ if buscar:
     st.subheader("📊 Resultados — " + especie)
     st.caption("Fase lunar hoy: " + fase_emoji + " " + fase_nombre)
 
-    # Semáforo de zona
     st.markdown(
         f"""
         <div style="background-color:{sem_color}22; border-left: 5px solid {sem_color};
@@ -776,7 +684,6 @@ if buscar:
         unsafe_allow_html=True
     )
 
-    # ── ZONA ROJA — no salir hoy ──────────────────────────────────
     if semaforo == "ROJO":
         st.error("⚠️ ZONA NO RECOMENDADA HOY — El mar no está activo en tu zona.")
         if razones:
@@ -795,12 +702,10 @@ if buscar:
         )
         st.stop()
 
-    # ── Calcular score ────────────────────────────────────────────
     rule = species_rules[species_rules["species"] == especie].iloc[0]
     df   = calcular_score(df, rule)
     df   = df.dropna(subset=["score"])
     df   = df[df["score"] > 0].sort_values("score", ascending=False)
-
     if df.empty:
         st.warning("Sin puntos con score valido.")
         st.stop()
@@ -810,8 +715,7 @@ if buscar:
     res["dist_km"] = (res["dist_nm"] * 1.852).round(1)
     res = res.sort_values(["prob", "dist_km"], ascending=[False, True]).reset_index(drop=True)
 
-    # ── Advección y refinamiento ──────────────────────────────────
-    horas_latencia = 24  # valor por defecto; Colab lo calcula dinámicamente
+    horas_latencia = 24
     for i, row in res.iterrows():
         adv_lat, adv_lon, adv_dist, confianza = calcular_adveccion_app(
             row["lat"], row["lon"], df, horas_latencia
@@ -820,7 +724,6 @@ if buscar:
         res.loc[i, "adv_lon"]       = adv_lon
         res.loc[i, "adv_dist_km"]   = adv_dist
         res.loc[i, "adv_confianza"] = confianza
-
         lat_r, lon_r, refinado = refinar_con_cerebro(row["lat"], row["lon"], df)
         res.loc[i, "lat_refinada"]      = lat_r
         res.loc[i, "lon_refinada"]      = lon_r
@@ -828,7 +731,6 @@ if buscar:
 
     st.caption("ℹ️ Indice operativo — no es probabilidad estadistica")
 
-    # ── Mostrar resultados ────────────────────────────────────────
     for i, row in res.iterrows():
         adv_dist = float(row.get("adv_dist_km", 0))
         adv_tag  = ""
@@ -837,7 +739,6 @@ if buscar:
             adv_lon  = float(row.get("adv_lon", row["lon"]))
             dir_txt  = direccion_cardinal(row["lat"], row["lon"], adv_lat, adv_lon)
             adv_tag  = " → " + str(round(adv_dist, 1)) + "km (" + row.get("adv_confianza", "MEDIA") + ")"
-
         with st.expander(
             "Punto " + str(i+1) + " — Indice: " + str(row["prob"]) + "% | " +
             str(round(abs(row["lat"]), 4)) + "S, " +
@@ -854,8 +755,6 @@ if buscar:
             c5.metric("📈 Grad. termico", str(round(row["grad_sst_mean_7d"], 4)) + " C/km")
             c6.metric(fase_emoji + " Fase lunar", fase_nombre)
             st.caption("⏰ Mejor hora: " + HORARIOS.get(especie, ""))
-
-            # Guía táctica en la UI
             if adv_dist > 0.5:
                 adv_lat2 = float(row.get("adv_lat", row["lat"]))
                 adv_lon2 = float(row.get("adv_lon", row["lon"]))
@@ -866,13 +765,11 @@ if buscar:
                 mag      = max(abs(dlat) + abs(dlon), 1e-9)
                 glat     = row["lat"] + (dlat / mag) * fguia
                 glon     = row["lon"] + (dlon / mag) * fguia / np.cos(np.deg2rad(row["lat"]))
-
                 st.info(
                     "🌊 Si no encuentra actividad, avance hacia el **" + dir_txt2 + "**\n\n"
                     "🧭 Punto guía opcional: **" + str(abs(glat))[:6] + "S, " +
                     str(abs(glon))[:6] + "W** (" + row.get("adv_confianza", "MEDIA") + ")"
                 )
-
             if row.get("cerebro_refinado"):
                 lat_r = float(row.get("lat_refinada", row["lat"]))
                 lon_r = float(row.get("lon_refinada", row["lon"]))
@@ -880,11 +777,8 @@ if buscar:
                     "✓ Coordenada refinada por cluster CHL: **" +
                     str(abs(lat_r))[:7] + "S, " + str(abs(lon_r))[:7] + "W** — radio aprox. 2 km"
                 )
-
             if row.get("alert"):
                 st.warning(row["alert"])
-
-            # Imagen descargable
             buf = generar_imagen_bytes(i, row, especie, modo,
                                        fase_emoji, fase_nombre, zona_surgencia)
             st.image(buf, use_column_width=True)
