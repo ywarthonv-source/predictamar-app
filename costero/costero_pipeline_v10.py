@@ -504,7 +504,7 @@ if not S2_DISPONIBLE:
         bgc_path = f"{DRIVE_BASE}/raw/chl_bgc.nc"
         if os.path.exists(bgc_path): os.remove(bgc_path)
         copernicusmarine.subset(
-            dataset_id        = "cmems_mod_glo_bgc_my_0.25deg_P1D-m",
+            dataset_id        = "cmems_mod_glo_bgc-pft_nrt_global-analysis-forecast-phy-ecosys_0.25deg_P1D-m",
             variables         = ["chl"],
             minimum_latitude  = LAT_MIN_C,
             maximum_latitude  = LAT_MAX_C,
