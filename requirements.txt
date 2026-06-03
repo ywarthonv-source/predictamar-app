@@ -7,3 +7,4 @@ google-auth-oauthlib
 matplotlib
 Pillow
 ephem
+earthaccess
