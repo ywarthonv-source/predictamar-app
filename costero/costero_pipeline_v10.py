@@ -526,7 +526,9 @@ if not S2_DISPONIBLE:
             disable_progress_bar = True
         )
         ds_bgc   = xr.open_dataset(bgc_path)
-        chl_raw  = ds_bgc['chl'].values
+        # Variable puede ser 'CHL' o 'chl' dependiendo de la version del dataset
+        chl_var = 'CHL' if 'CHL' in ds_bgc.data_vars else 'chl'
+        chl_raw  = ds_bgc[chl_var].values
         chl_mean = np.nanmean(chl_raw, axis=0) if chl_raw.ndim >= 3 else chl_raw
         # Normalizar a GEE image equivalente para usar en score
         chl_norm_val = float(np.nanmean(chl_mean))
