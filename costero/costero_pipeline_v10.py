@@ -262,7 +262,12 @@ MUR_DISPONIBLE = False
 sst_grad_mur   = None
 
 try:
-    import earthaccess
+    try:
+        import earthaccess
+    except ImportError:
+        import subprocess
+        subprocess.run(["pip", "install", "earthaccess", "-q"], check=True)
+        import earthaccess
     NASA_USER = os.environ.get("NASA_EARTHDATA_USER", "")
     NASA_PASS = os.environ.get("NASA_EARTHDATA_PASS", "")
     if NASA_USER and NASA_PASS:
@@ -504,8 +509,8 @@ if not S2_DISPONIBLE:
         bgc_path = f"{DRIVE_BASE}/raw/chl_bgc.nc"
         if os.path.exists(bgc_path): os.remove(bgc_path)
         copernicusmarine.subset(
-            dataset_id        = "cmems_mod_glo_bgc-pft_nrt_global-analysis-forecast-phy-ecosys_0.25deg_P1D-m",
-            variables         = ["chl"],
+            dataset_id        = "cmems_obs-oc_glo_bgc-plankton_nrt_l4-gapfree-multi-4km_P1D",
+            variables         = ["CHL"],
             minimum_latitude  = LAT_MIN_C,
             maximum_latitude  = LAT_MAX_C,
             minimum_longitude = LON_MIN_C,
