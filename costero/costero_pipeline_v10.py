@@ -201,21 +201,14 @@ def asignar_sector(lat, lon, dist):
     if dist <= 6.0:
         return "COSTERO"
 
-    # Norte: hacia Miraflores (lat mas al norte = valor menos negativo)
-    if dlat > 0.02:  # mas de ~2 km al norte del muelle
-        return "NORTE"
-
-    # Sur: hacia Morro Solar y Lurin (lat mas al sur = valor mas negativo)
-    if dlat < -0.02:  # mas de ~2 km al sur del muelle
+    # Sur: hacia Morro Solar y Lurin
+    if dlat < -0.02:
         return "SUR"
 
-    # Oeste: aguas abiertas (lejos de la costa)
-    if dist > 12.0:
+    # Oeste: aguas abiertas
+    if dist > 6.0:
         return "OESTE"
 
-    # Zona intermedia -- asignar por predominancia
-    if abs(dlat) > abs(dlon):
-        return "SUR" if dlat < 0 else "NORTE"
     return "OESTE"
 
 # ================================================================
@@ -257,6 +250,52 @@ try:
     print(f"  SST OK -- T: {sst_temp_medio:.1f}C | grad: {sst_grad_medio:.3f}")
 except Exception as e:
     print(f"  SST error: {e}")
+sys.stdout.flush()
+
+# ================================================================
+# FUENTE 1b -- MUR SST 1km NASA/JPL (gap-free, microondas+optico)
+# Mejora el gradiente SST a 1km vs OSTIA 5km
+# Credenciales: NASA Earthdata (randywarthonvelarde)
+# ================================================================
+print("\n[1b] MUR SST 1km NASA/JPL -- gradiente alta resolucion...")
+MUR_DISPONIBLE = False
+sst_grad_mur   = None
+
+try:
+    import earthaccess
+    NASA_USER = os.environ.get("NASA_EARTHDATA_USER", "")
+    NASA_PASS = os.environ.get("NASA_EARTHDATA_PASS", "")
+    if NASA_USER and NASA_PASS:
+        earthaccess.login(strategy="environment")
+        results = earthaccess.search_data(
+            short_name  = "MUR-JPL-L4-GLOB-v4.1",
+            temporal    = ((FECHA_SURG - timedelta(days=1)).strftime("%Y-%m-%d"),
+                           FECHA_SURG.strftime("%Y-%m-%d")),
+            bounding_box = (LON_MIN_C, LAT_MIN_C, LON_MAX_C, LAT_MAX_C),
+        )
+        if results:
+            mur_path = f"{DRIVE_BASE}/raw/mur_sst.nc"
+            earthaccess.download(results[:1], local_path=f"{DRIVE_BASE}/raw")
+            import glob
+            mur_files = glob.glob(f"{DRIVE_BASE}/raw/*MUR*.nc") + glob.glob(f"{DRIVE_BASE}/raw/*mur*.nc")
+            if mur_files:
+                ds_mur   = xr.open_dataset(mur_files[0])
+                mur_raw  = ds_mur['analysed_sst'].values
+                mur_C    = mur_raw - 273.15 if mur_raw.max() > 100 else mur_raw
+                mur_mean = np.nanmean(mur_C, axis=0) if mur_C.ndim == 3 else mur_C
+                gy_m, gx_m = np.gradient(np.where(np.isnan(mur_mean), 0, mur_mean))
+                mur_grad_raw = np.sqrt(gx_m**2 + gy_m**2)
+                p5_m  = np.nanpercentile(mur_grad_raw, 5)
+                p95_m = np.nanpercentile(mur_grad_raw, 95)
+                sst_grad_mur = float(np.nanmean(np.clip((mur_grad_raw - p5_m) / (p95_m - p5_m + 1e-9), 0, 1)))
+                # Reemplazar gradiente SST si MUR es mas preciso
+                sst_grad_medio = sst_grad_mur
+                MUR_DISPONIBLE = True
+                print(f"  MUR SST OK -- grad_1km: {sst_grad_mur:.3f} (reemplaza gradiente OSTIA)")
+    else:
+        print("  MUR SST -- credenciales NASA no disponibles en secrets")
+except Exception as e:
+    print(f"  MUR SST error (no critico): {e}")
 sys.stdout.flush()
 
 # ================================================================
@@ -370,6 +409,49 @@ except Exception as e:
 sys.stdout.flush()
 
 # ================================================================
+# FUENTE 4b -- Temperatura subsuperficial 10m Mercator (proxy termoclina)
+# Variables: thetao a ~10m profundidad
+# Gradiente vertical SST-TSS como indicador de mezcla y termoclina
+# ================================================================
+print("\n[4b] Temperatura subsuperficial 10m -- proxy termoclina...")
+TERMOCLINA_DISPONIBLE = False
+grad_vertical         = 0.0  # SST - T10m
+
+try:
+    tss_path = f"{DRIVE_BASE}/raw/temp_sub.nc"
+    if os.path.exists(tss_path): os.remove(tss_path)
+    copernicusmarine.subset(
+        dataset_id        = "cmems_mod_glo_phy-thetao_anfc_0.083deg_P1D-m",
+        variables         = ["thetao"],
+        minimum_latitude  = LAT_MIN_C,
+        maximum_latitude  = LAT_MAX_C,
+        minimum_longitude = LON_MIN_C,
+        maximum_longitude = LON_MAX_C,
+        start_datetime    = (FECHA_HOY - timedelta(days=1)).strftime("%Y-%m-%dT00:00:00"),
+        end_datetime      = FECHA_HOY.strftime("%Y-%m-%dT23:59:59"),
+        minimum_depth     = 9.0,
+        maximum_depth     = 11.0,
+        output_filename   = "temp_sub.nc",
+        output_directory  = f"{DRIVE_BASE}/raw",
+        username          = CMEMS_USER,
+        password          = CMEMS_PASS,
+        disable_progress_bar = True
+    )
+    ds_tss  = xr.open_dataset(tss_path)
+    tss_raw = ds_tss['thetao'].values
+    tss_C   = tss_raw - 273.15 if tss_raw.max() > 100 else tss_raw
+    tss_mean = float(np.nanmean(tss_C))
+    if sst_temp_medio is not None and not np.isnan(tss_mean):
+        grad_vertical = round(float(sst_temp_medio - tss_mean), 3)
+        TERMOCLINA_DISPONIBLE = True
+        print(f"  Termoclina OK -- SST: {sst_temp_medio:.1f}C | T10m: {tss_mean:.1f}C | grad_vert: {grad_vertical:+.2f}C")
+    else:
+        print("  Termoclina -- SST no disponible para calcular gradiente")
+except Exception as e:
+    print(f"  Termoclina error (no critico): {e}")
+sys.stdout.flush()
+
+# ================================================================
 # FUENTE 5 -- SENTINEL-2 (bloom T-4d, solo cielo despejado)
 # ================================================================
 print("\n[5/8] Sentinel-2 -- bloom T-4d...")
@@ -405,6 +487,53 @@ try:
         print("  S2 sin dato -- nubosidad Lima")
 except Exception as e:
     print(f"  S2 error: {e}")
+sys.stdout.flush()
+
+# ================================================================
+# FUENTE 5b -- CHL modelada CMEMS BGC (gap-free, sin huecos de nube)
+# Fallback cuando S2 no disponible -- resuelve el problema de nubosidad
+# Dataset: cmems_mod_glo_bgc_my_0.25deg_P1D-m
+# ================================================================
+print("\n[5b] CHL modelada CMEMS BGC -- fallback sin nubosidad...")
+CHL_BGC_DISPONIBLE = False
+chl_bgc_imagen     = None
+Fc_bgc             = 0.0
+
+if not S2_DISPONIBLE:
+    try:
+        bgc_path = f"{DRIVE_BASE}/raw/chl_bgc.nc"
+        if os.path.exists(bgc_path): os.remove(bgc_path)
+        copernicusmarine.subset(
+            dataset_id        = "cmems_mod_glo_bgc_my_0.25deg_P1D-m",
+            variables         = ["chl"],
+            minimum_latitude  = LAT_MIN_C,
+            maximum_latitude  = LAT_MAX_C,
+            minimum_longitude = LON_MIN_C,
+            maximum_longitude = LON_MAX_C,
+            start_datetime    = (FECHA_BLOOM - timedelta(days=3)).strftime("%Y-%m-%dT00:00:00"),
+            end_datetime      = FECHA_BLOOM.strftime("%Y-%m-%dT23:59:59"),
+            minimum_depth     = 0.0,
+            maximum_depth     = 1.0,
+            output_filename   = "chl_bgc.nc",
+            output_directory  = f"{DRIVE_BASE}/raw",
+            username          = CMEMS_USER,
+            password          = CMEMS_PASS,
+            disable_progress_bar = True
+        )
+        ds_bgc   = xr.open_dataset(bgc_path)
+        chl_raw  = ds_bgc['chl'].values
+        chl_mean = np.nanmean(chl_raw, axis=0) if chl_raw.ndim >= 3 else chl_raw
+        # Normalizar a GEE image equivalente para usar en score
+        chl_norm_val = float(np.nanmean(chl_mean))
+        # Crear imagen GEE proxy desde valor medio BGC
+        chl_bgc_imagen = ee.Image.constant(float(chl_norm_val)).rename('score')
+        CHL_BGC_DISPONIBLE = True
+        Fc_bgc = 0.60  # Confianza reducida vs S2 optico real
+        print(f"  CHL BGC OK -- chl_medio: {chl_norm_val:.4f} mg/m3 | Fc: {Fc_bgc}")
+    except Exception as e:
+        print(f"  CHL BGC error: {e}")
+else:
+    print("  CHL BGC -- no necesario, S2 disponible")
 sys.stdout.flush()
 
 # ================================================================
@@ -516,6 +645,7 @@ W_activos = {}
 if SST_DISPONIBLE:    W_activos["sst_grad"]    = W_BASE["sst_grad"]
 if ERA5_DISPONIBLE:   W_activos["era5_viento"] = W_BASE["era5_viento"]
 if S2_DISPONIBLE:     W_activos["chl_bloom"]   = W_BASE["chl_bloom"] * Fc_s2
+elif CHL_BGC_DISPONIBLE: W_activos["chl_bloom"] = W_BASE["chl_bloom"] * Fc_bgc  # fallback BGC
 if S1_DISPONIBLE:     W_activos["s1_sar"]      = W_BASE["s1_sar"] * Fc_s1
 if ALOS2_DISPONIBLE:  W_activos["alos2"]       = W_BASE["alos2"] * Fc_alos2
 if gebco_slope:       W_activos["batimetria"]  = W_BASE["batimetria"]
@@ -525,7 +655,7 @@ total_w = sum(W_activos.values())
 if total_w > 0:
     W_activos = {k: v / total_w for k, v in W_activos.items()}
 
-n_bio = sum([SST_DISPONIBLE, ERA5_DISPONIBLE, S2_DISPONIBLE])
+n_bio = sum([SST_DISPONIBLE, ERA5_DISPONIBLE, S2_DISPONIBLE, CHL_BGC_DISPONIBLE, MUR_DISPONIBLE])
 n_fis = sum([S1_DISPONIBLE, ALOS2_DISPONIBLE, bool(gebco_slope), bool(geometria_costera)])
 # Confianza corregida: ALTA solo con datos biologicos directos (S2) activos
 # En modo Teatro Fisico (sin S2) la confianza es MEDIA por definicion
@@ -692,6 +822,8 @@ for i in range(0, len(puntos_flat), 100):
             capas.append(geometria_costera.toFloat().clamp(0, 1).multiply(float(W_activos.get("geometria", 0))))
         if S2_DISPONIBLE and chl_bloom_imagen:
             capas.append(chl_bloom_imagen.toFloat().unitScale(0.8, 1.5).clamp(0, 1).multiply(float(W_activos.get("chl_bloom", 0))))
+        elif CHL_BGC_DISPONIBLE and chl_bgc_imagen:
+            capas.append(chl_bgc_imagen.toFloat().unitScale(0.1, 2.0).clamp(0, 1).multiply(float(W_activos.get("chl_bloom", 0))))
         if not capas:
             continue
 
@@ -728,8 +860,16 @@ for i in range(0, len(puntos_flat), 100):
                     if dist_emp < 1.0 and indice_surgencia >= zona_emp["surgencia_min"]:
                         bonus_empirico = max(bonus_empirico, zona_emp["bonus"])
 
+                # Bonus termoclina: gradiente vertical fuerte indica surgencia activa
+                # Si SST >> T10m (agua fria sube) es senal de surgencia real
+                bonus_termoclina = 0.0
+                if TERMOCLINA_DISPONIBLE:
+                    if grad_vertical >= 2.0:   bonus_termoclina = 0.04  # surgencia fuerte
+                    elif grad_vertical >= 1.0: bonus_termoclina = 0.02  # surgencia moderada
+                    elif grad_vertical < 0:    bonus_termoclina = -0.03 # mezcla inversa
+
                 score_abs = float(np.clip(
-                    score_con_viento + contrib_sst + penalizacion_mezcla + bonus_marea_global + bonus_empirico,
+                    score_con_viento + contrib_sst + penalizacion_mezcla + bonus_marea_global + bonus_empirico + bonus_termoclina,
                     0.0, 1.0
                 ))
 
@@ -866,7 +1006,7 @@ def seleccionar_top5(df_sector, sector_nombre, bonus_trampa_val):
 
     return pd.DataFrame(seleccionados)
 
-sectores_orden = ['COSTERO', 'SUR', 'NORTE', 'OESTE']
+sectores_orden = ['COSTERO', 'SUR', 'OESTE']
 df_rep_list = []
 
 for sector in sectores_orden:
@@ -1018,6 +1158,9 @@ print(f"Confianza: {CONFIANZA}")
 print(f"SST L4:      {'OK T=' + str(round(sst_temp_medio,1)) if SST_DISPONIBLE else 'NO'}")
 print(f"ERA5:        {'OK ind=' + str(round(indice_surgencia,3)) if ERA5_DISPONIBLE else 'NO'}")
 print(f"S2 bloom:    {'OK Fc=' + str(round(Fc_s2,2)) if S2_DISPONIBLE else 'NO (nubosidad)'}")
+print(f"CHL BGC:     {'OK Fc=' + str(round(Fc_bgc,2)) if CHL_BGC_DISPONIBLE else 'NO (S2 disponible o error)'}")
+print(f"MUR SST 1km: {'OK grad=' + str(round(sst_grad_mur,3)) if MUR_DISPONIBLE else 'NO (credenciales o error)'}")
+print(f"Termoclina:  {'OK grad_vert=' + str(grad_vertical) + 'C' if TERMOCLINA_DISPONIBLE else 'NO'}")
 print(f"S1 SAR:      {'OK Fc=' + str(round(Fc_s1,2)) if S1_DISPONIBLE else 'NO'}")
 print(f"ALOS-2:      {'OK Fc=' + str(round(Fc_alos2,2)) if ALOS2_DISPONIBLE else 'NO'}")
 print(f"Oleaje:      {'ADVERSO SWH=' + str(round(swh_medio,2)) if kill_switch_activo else 'OK SWH=' + str(round(swh_medio,2)) + 'm'}")
