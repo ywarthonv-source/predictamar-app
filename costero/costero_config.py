@@ -122,6 +122,11 @@ CHRISTIAN_ZONAS_EMPIRICAS = [
 # A completar con Christian en proxima sesion
 CHRISTIAN_ZONAS_ROCOSAS = []  # pendiente: mapeo con Christian
 
+# -- NASA Earthdata credentials (MUR SST 1km)
+# Agregar en GitHub Secrets: NASA_EARTHDATA_USER y NASA_EARTHDATA_PASS
+# Usuario registrado: randywarthonvelarde (ywarthonv@gmail.com)
+# URL: urs.earthdata.nasa.gov
+
 # -- Version
 VERSION        = "v1.2"
 NOMBRE_SISTEMA = "PredictaMAR Costero v1.2"
