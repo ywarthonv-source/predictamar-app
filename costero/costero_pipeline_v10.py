@@ -268,9 +268,12 @@ try:
         import subprocess
         subprocess.run(["pip", "install", "earthaccess", "-q"], check=True)
         import earthaccess
-    NASA_USER = os.environ.get("NASA_EARTHDATA_USER", "")
-    NASA_PASS = os.environ.get("NASA_EARTHDATA_PASS", "")
+    # earthaccess requiere EARTHDATA_USERNAME y EARTHDATA_PASSWORD como env vars
+    NASA_USER = os.environ.get("EARTHDATA_USERNAME", "")
+    NASA_PASS = os.environ.get("EARTHDATA_PASSWORD", "")
     if NASA_USER and NASA_PASS:
+        os.environ["EARTHDATA_USERNAME"] = NASA_USER
+        os.environ["EARTHDATA_PASSWORD"] = NASA_PASS
         earthaccess.login(strategy="environment")
         results = earthaccess.search_data(
             short_name  = "MUR-JPL-L4-GLOB-v4.1",
