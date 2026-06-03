@@ -35,6 +35,8 @@ jobs:
           CMEMS_USER:       ${{ secrets.CMEMS_USER }}
           CMEMS_PASS:       ${{ secrets.CMEMS_PASS }}
           NASA_TOKEN:       ${{ secrets.NASA_TOKEN }}
+          NASA_EARTHDATA_USER: ${{ secrets.NASA_EARTHDATA_USER }}
+          NASA_EARTHDATA_PASS: ${{ secrets.NASA_EARTHDATA_PASS }}
           CDS_KEY:          ${{ secrets.CDS_KEY }}
           SHEET_ID:         ${{ secrets.SHEET_ID }}
           COSTERO_SHEET_ID: ${{ secrets.COSTERO_SHEET_ID }}
