@@ -192,7 +192,37 @@ else:
     st.warning("Madrugada con vaciante predominante -- evaluar salida en la tarde")
 
 st.divider()
-st.subheader("Zonas de pesca -- 4 sectores")
+
+# ================================================================
+# HORA DE LANCE -- recalculo de adveccion en tiempo real
+# ================================================================
+st.subheader("Hora de lance")
+st.caption("Ingresa la hora a la que planeas lanzar la red. El sistema calculara donde estara el agua en ese momento.")
+
+col_hora1, col_hora2 = st.columns([2,3])
+with col_hora1:
+    hora_lance = st.selectbox(
+        "Hora del lance (Lima)",
+        options=list(range(4, 22)),
+        index=13,
+        format_func=lambda h: f"{h:02d}:00 {'AM' if h < 12 else 'PM'} Lima"
+    )
+
+import pytz as _pytz
+_lima_tz_app = _pytz.timezone('America/Lima')
+_ahora_lima_app = datetime.now(_lima_tz_app)
+_hora_actual_decimal = _ahora_lima_app.hour + _ahora_lima_app.minute / 60.0
+_horas_hasta_lance = max(0.5, hora_lance - _hora_actual_decimal)
+_desplazamiento_km = round(_horas_hasta_lance * 0.19 * 3.6, 1)
+
+with col_hora2:
+    if _horas_hasta_lance <= 0.5:
+        st.warning(f"Lance muy proximo. Usando minimo 30 min de proyeccion.")
+    else:
+        st.info(f"{_horas_hasta_lance:.1f}h hasta las {hora_lance:02d}:00 | Agua se habra desplazado ~{_desplazamiento_km} km")
+
+st.divider()
+st.subheader("Zonas de pesca -- 3 sectores")
 st.caption("Toca 'Ver en mapa' para abrir el pin en Google Maps. Guarda captura antes de salir.")
 
 LAT_CHORRILLOS = -12.157
@@ -290,11 +320,21 @@ for sector in orden:
             score_loc = to_float(zona.get("score_local", 0))
             score_pct = int(score_loc * 100)
 
-            # Coordenada de adveccion -- donde se movio el agua en 16h
-            lat16 = to_float(zona.get("lat_T16", 0))
-            lon16 = to_float(zona.get("lon_T16", 0))
-            desp  = to_float(zona.get("desp_km", 0))
-            dir_adv = str(zona.get("direccion", ""))
+            # Coordenada de adveccion -- calculada dinamicamente para hora de lance ingresada
+            # Usa corrientes uo/vo del pipeline y proyecta a _horas_hasta_lance
+            uo = to_float(zona.get("uo_medio", -0.19))
+            vo = to_float(zona.get("vo_medio", 0.11))
+            seg = _horas_hasta_lance * 3600.0
+            import math as _math
+            dlat = (vo * seg) / 111000.0
+            dlon = (uo * seg) / (111000.0 * _math.cos(_math.radians(lat)))
+            lat16 = round(lat + dlat, 4)
+            lon16 = round(lon + dlon, 4)
+            desp  = round(_math.sqrt(((lat16-lat)*111.0)**2 + ((lon16-lon)*111.0*_math.cos(_math.radians(lat)))**2), 1)
+            # Direccion del desplazamiento
+            angulo = _math.degrees(_math.atan2(lon16-lon, lat16-lat))
+            _dirs = ["N","NE","E","SE","S","SO","O","NO"]
+            dir_adv = _dirs[int((angulo + 22.5) / 45) % 8]
 
             gmap = f"https://www.google.com/maps?q={lat},{lon}&z=14"
 
