@@ -15,8 +15,8 @@ LON_MIN_C        = -77.241
 LON_MAX_C        = -77.060  # corregido: Costa Verde Miraflores en -77.050, margen seguridad
 
 # -- Resolucion y grilla
-RADIO_MAX_KM     = 7
-RADIO_COSTERO_KM  = 6    # ampliado: captura zona de Christian (-12.1338, -77.0586)   # Radio real operacional de Christian con motor 15HP
+RADIO_MAX_KM     = 6    # radio real operacional de Christian con motor 15HP
+RADIO_COSTERO_KM  = 6    # sector costero cubre zona completa de Christian
 RADIO_ORILLA_KM  = 0.5
 
 # -- Buffer pixel mixto
@@ -41,8 +41,11 @@ FC_S2_MAX_DIAS    = 5
 FC_S1_MAX_DIAS    = 6   # SAR util hasta 6 dias -- degradacion gradual
 
 # -- Adveccion
-ADV_HORAS_T8  = 8
-ADV_HORAS_T16 = 16
+# Adveccion calculada desde hora de corrida del pipeline hasta hora de lance
+# HORA_LANCE_LIMA se puede pasar como variable de entorno
+# Default: 17 (5PM Lima) -- hora punta identificada en campo (segunda salida 4jun2026)
+HORA_LANCE_DEFAULT = 17  # 5PM Lima -- hora punta cachema segun Christian
+
 
 # -- Oleaje: flag operacional y penalizacion mezcla
 SWH_KILL_SWITCH  = 1.5   # metros -- bloqueo operacional
@@ -89,6 +92,10 @@ GEE_GEBCO     = "NOAA/NGDC/ETOPO1"
 GEE_GEBCO_BAND = "bedrock"
 GEE_WAVES     = "COPERNICUS_MARINE_WAV_ANFC_0_083DEG_PT3H"
 
+# -- Separacion minima entre puntos (distancia entre compaeros artesanales en Chorrillos)
+SEP_VARIANTES_KM  = 1.0   # 1km -- distancia que mantienen compaeros entre embarcaciones
+SEP_TRAMPAS_KM    = 1.0   # 1km -- igual para trampas estaticas
+
 # -- Umbrales confianza
 CONFIANZA_ALTA  = 0.75
 CONFIANZA_MEDIA = 0.50
@@ -98,7 +105,7 @@ CONFIANZA_BAJA  = 0.25
 HISTORIAL_DIAS = 90
 
 # -- Perfil operacional Christian (primer piloto)
-CHRISTIAN_RADIO_KM     = 7.0      # radio real con motor 15HP
+CHRISTIAN_RADIO_KM     = 6.0      # radio real validado en campo -- segunda salida 4jun2026
 CHRISTIAN_PROF_MAX_M   = 3.5      # altura maxima de red
 CHRISTIAN_ESPECIES     = ["cachema", "lorna", "pejerrey", "machete", "sardina"]
 
@@ -117,6 +124,19 @@ CHRISTIAN_ZONAS_EMPIRICAS = [
         "notas": "Agua lechosa turbia, lobos marinos activos, ~2 baldes cachema"
     }
 ]
+
+# -- Segunda zona empirica validada en campo 4 junio 2026
+# Punto donde Christian lanzo la red a las 5:57PM -- pesca positiva con lobos
+CHRISTIAN_ZONAS_EMPIRICAS.append({
+    "lat": -12.1612,
+    "lon": -77.0626,
+    "nombre": "Zona segunda salida -- validada 04jun2026",
+    "especie": "cachema",
+    "surgencia_min": 0.60,
+    "bonus": 0.15,           # bonus menor que zona principal (menos datos)
+    "hora_optima": "18:00",  # hora de lance real: 5:57PM
+    "notas": "Agua clara, corriente Norte, lobos activos, pesca positiva reducida por lobos"
+})
 
 # -- Zonas de exclusion por fondo rocoso (red se rompe)
 # A completar con Christian en proxima sesion
