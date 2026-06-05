@@ -304,7 +304,16 @@ try:
         )
         if results:
             mur_path = f"{DRIVE_BASE}/raw/mur_sst.nc"
-            earthaccess.download(results[:1], local_path=f"{DRIVE_BASE}/raw")
+            # Timeout de 90 segundos para no bloquear el pipeline
+            import signal as _signal
+            def _timeout_handler(signum, frame):
+                raise TimeoutError("MUR download timeout")
+            _signal.signal(_signal.SIGALRM, _timeout_handler)
+            _signal.alarm(90)
+            try:
+                earthaccess.download(results[:1], local_path=f"{DRIVE_BASE}/raw")
+            finally:
+                _signal.alarm(0)
             import glob
             mur_files = glob.glob(f"{DRIVE_BASE}/raw/*MUR*.nc") + glob.glob(f"{DRIVE_BASE}/raw/*mur*.nc")
             if mur_files:
