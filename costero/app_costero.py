@@ -239,9 +239,18 @@ for sector in orden:
     # Ordenar por rank -- extraer numero del rank_sector
     def extract_rank(val):
         try:
-            s = str(val)
-            if ":" in s and "-" in s:
-                return int(s.split(":")[-1].split(".")[0].strip())
+            # Si es numero directo
+            if isinstance(val, (int, float)):
+                return int(val)
+            s = str(val).strip()
+            # Si viene como datetime string tipo "2026-06-05 00:00:01" -- extraer ultimo digito
+            if "-" in s and ":" in s and len(s) > 10:
+                # Es un datetime -- el rank esta codificado en los segundos
+                segundos = int(s.split(":")[-1].split(".")[0].strip())
+                if 1 <= segundos <= 5:
+                    return segundos
+                return 99
+            # Si viene como "1.0", "2.0" etc
             return int(float(s))
         except:
             return 99
