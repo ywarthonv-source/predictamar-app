@@ -278,63 +278,11 @@ sys.stdout.flush()
 # Mejora el gradiente SST a 1km vs OSTIA 5km
 # Credenciales: NASA Earthdata (randywarthonvelarde)
 # ================================================================
-print("\n[1b] MUR SST 1km NASA/JPL -- gradiente alta resolucion...")
+print("\n[1b] MUR SST 1km -- deshabilitado temporalmente (NASA timeout)")
 MUR_DISPONIBLE = False
 sst_grad_mur   = None
-
-try:
-    try:
-        import earthaccess
-    except ImportError:
-        import subprocess
-        subprocess.run(["pip", "install", "earthaccess", "-q"], check=True)
-        import earthaccess
-    # earthaccess requiere EARTHDATA_USERNAME y EARTHDATA_PASSWORD como env vars
-    NASA_USER = os.environ.get("EARTHDATA_USERNAME", "")
-    NASA_PASS = os.environ.get("EARTHDATA_PASSWORD", "")
-    if NASA_USER and NASA_PASS:
-        os.environ["EARTHDATA_USERNAME"] = NASA_USER
-        os.environ["EARTHDATA_PASSWORD"] = NASA_PASS
-        earthaccess.login(strategy="environment")
-        results = earthaccess.search_data(
-            short_name  = "MUR-JPL-L4-GLOB-v4.1",
-            temporal    = ((FECHA_SURG - timedelta(days=1)).strftime("%Y-%m-%d"),
-                           FECHA_SURG.strftime("%Y-%m-%d")),
-            bounding_box = (LON_MIN_C, LAT_MIN_C, LON_MAX_C, LAT_MAX_C),
-        )
-        if results:
-            mur_path = f"{DRIVE_BASE}/raw/mur_sst.nc"
-            # Timeout de 90 segundos para no bloquear el pipeline
-            import signal as _signal
-            def _timeout_handler(signum, frame):
-                raise TimeoutError("MUR download timeout")
-            _signal.signal(_signal.SIGALRM, _timeout_handler)
-            _signal.alarm(90)
-            try:
-                earthaccess.download(results[:1], local_path=f"{DRIVE_BASE}/raw")
-            finally:
-                _signal.alarm(0)
-            import glob
-            mur_files = glob.glob(f"{DRIVE_BASE}/raw/*MUR*.nc") + glob.glob(f"{DRIVE_BASE}/raw/*mur*.nc")
-            if mur_files:
-                ds_mur   = xr.open_dataset(mur_files[0])
-                mur_raw  = ds_mur['analysed_sst'].values
-                mur_C    = mur_raw - 273.15 if mur_raw.max() > 100 else mur_raw
-                mur_mean = np.nanmean(mur_C, axis=0) if mur_C.ndim == 3 else mur_C
-                gy_m, gx_m = np.gradient(np.where(np.isnan(mur_mean), 0, mur_mean))
-                mur_grad_raw = np.sqrt(gx_m**2 + gy_m**2)
-                p5_m  = np.nanpercentile(mur_grad_raw, 5)
-                p95_m = np.nanpercentile(mur_grad_raw, 95)
-                sst_grad_mur = float(np.nanmean(np.clip((mur_grad_raw - p5_m) / (p95_m - p5_m + 1e-9), 0, 1)))
-                # Reemplazar gradiente SST si MUR es mas preciso
-                sst_grad_medio = sst_grad_mur
-                MUR_DISPONIBLE = True
-                print(f"  MUR SST OK -- grad_1km: {sst_grad_mur:.3f} (reemplaza gradiente OSTIA)")
-    else:
-        print("  MUR SST -- credenciales NASA no disponibles en secrets")
-except Exception as e:
-    print(f"  MUR SST error (no critico): {e}")
 sys.stdout.flush()
+
 
 # ================================================================
 # FUENTE 2 -- ERA5 VIENTO (proxy surgencia)
