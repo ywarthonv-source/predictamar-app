@@ -239,18 +239,17 @@ for sector in orden:
     # Ordenar por rank -- extraer numero del rank_sector
     def extract_rank(val):
         try:
-            # Si es numero directo
             if isinstance(val, (int, float)):
                 return int(val)
             s = str(val).strip()
-            # Si viene como datetime string tipo "2026-06-05 00:00:01" -- extraer ultimo digito
-            if "-" in s and ":" in s and len(s) > 10:
-                # Es un datetime -- el rank esta codificado en los segundos
-                segundos = int(s.split(":")[-1].split(".")[0].strip())
-                if 1 <= segundos <= 5:
-                    return segundos
-                return 99
-            # Si viene como "1.0", "2.0" etc
+            # Google Sheets convierte 1,2,3,4,5 a fechas 1900-01-01, 1900-01-02 etc
+            # 1899-12-31 = 0, 1900-01-01 = 1, 1900-01-02 = 2, etc
+            if "1899-12-31" in s: return 1
+            if "1900-01-01" in s: return 1
+            if "1900-01-02" in s: return 2
+            if "1900-01-03" in s: return 3
+            if "1900-01-04" in s: return 4
+            if "1900-01-05" in s: return 5
             return int(float(s))
         except:
             return 99
