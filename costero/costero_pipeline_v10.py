@@ -145,6 +145,27 @@ sys.stdout.flush()
 
 # -- Fechas
 FECHA_HOY     = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+
+# -- Hora de lance dinamica
+# Se puede pasar como variable de entorno HORA_LANCE_LIMA (hora Lima 0-23)
+# Si no se pasa, usa HORA_LANCE_DEFAULT del config (17 = 5PM)
+import pytz as _pytz
+_lima_tz = _pytz.timezone('America/Lima')
+_ahora_lima = datetime.now(_lima_tz)
+_hora_lima_actual = _ahora_lima.hour + _ahora_lima.minute / 60.0
+
+try:
+    _hora_lance_env = int(os.environ.get("HORA_LANCE_LIMA", str(HORA_LANCE_DEFAULT)))
+except:
+    _hora_lance_env = HORA_LANCE_DEFAULT
+
+# Horas hasta el lance desde ahora
+ADV_HORAS_LANCE = max(0.5, _hora_lance_env - _hora_lima_actual)
+# Para mostrar en app: donde estara el agua en el momento del lance
+ADV_HORAS_T8  = ADV_HORAS_LANCE          # principal: hora del lance
+ADV_HORAS_T16 = ADV_HORAS_LANCE + 1.0   # secundario: 1h despues del lance
+
+print(f"Hora Lima actual: {_ahora_lima.strftime('%H:%M')} | Hora lance configurada: {_hora_lance_env:02d}:00 | Horas hasta lance: {ADV_HORAS_LANCE:.1f}h")
 FECHA_HOY_STR = FECHA_HOY.strftime("%Y-%m-%d")
 FECHA_BLOOM   = FECHA_HOY - timedelta(days=LAG_CHL_DIAS)
 FECHA_SURG    = FECHA_HOY - timedelta(days=T_SURGENCIA_DIAS)
@@ -872,11 +893,19 @@ for i in range(0, len(puntos_flat), 100):
 
                 # Bonus termoclina: gradiente vertical fuerte indica surgencia activa
                 # Si SST >> T10m (agua fria sube) es senal de surgencia real
+                # Indice de Estratificacion Termica (IET) -- diferenciador espacial clave
+                # Basado en recomendacion ChatGPT/Gemini: estructura vertical diferencia puntos
+                # a escala 1km cuando no hay datos opticos
+                # SST - T10m > 0: agua fria sube (surgencia activa, cardumen comprimido superficialmente)
+                # SST - T10m < 0: mezcla (columna homogenea, cardumen disperso en vertical)
                 bonus_termoclina = 0.0
                 if TERMOCLINA_DISPONIBLE:
-                    if grad_vertical >= 2.0:   bonus_termoclina = 0.04  # surgencia fuerte
-                    elif grad_vertical >= 1.0: bonus_termoclina = 0.02  # surgencia moderada
-                    elif grad_vertical < 0:    bonus_termoclina = -0.03 # mezcla inversa
+                    if grad_vertical >= 3.0:   bonus_termoclina = 0.06  # estratificacion fuerte -- cardumen comprimido superficial
+                    elif grad_vertical >= 2.0: bonus_termoclina = 0.04  # estratificacion moderada-alta
+                    elif grad_vertical >= 1.0: bonus_termoclina = 0.02  # estratificacion moderada
+                    elif grad_vertical >= 0.0: bonus_termoclina = 0.00  # columna neutra
+                    elif grad_vertical >= -0.5: bonus_termoclina = -0.02 # mezcla leve
+                    else:                       bonus_termoclina = -0.04 # mezcla fuerte -- cardumen en profundidad
 
                 score_abs = float(np.clip(
                     score_con_viento + contrib_sst + penalizacion_mezcla + bonus_marea_global + bonus_empirico + bonus_termoclina,
@@ -985,7 +1014,7 @@ def seleccionar_top5(df_sector, sector_nombre, bonus_trampa_val):
         if rank > 3:
             break
         dists_a_usados = [dist_km(float(row['lat']), float(row['lon']), u[0], u[1]) for u in usados]
-        if min(dists_a_usados) >= 0.5:
+        if min(dists_a_usados) >= SEP_VARIANTES_KM:  # 1km -- distancia entre companeros artesanales
             r = row.copy()
             r['rol'] = f"VARIANTE_{rank-1}"
             r['rank_sector'] = rank
@@ -1006,7 +1035,7 @@ def seleccionar_top5(df_sector, sector_nombre, bonus_trampa_val):
         if rank_t > 5:
             break
         dists_a_usados = [dist_km(float(row['lat']), float(row['lon']), u[0], u[1]) for u in usados]
-        if min(dists_a_usados) >= 0.8:
+        if min(dists_a_usados) >= SEP_TRAMPAS_KM:  # 1km para trampas
             r = row.copy()
             r['rol'] = f"TRAMPA_{rank_t-3}"
             r['rank_sector'] = rank_t
