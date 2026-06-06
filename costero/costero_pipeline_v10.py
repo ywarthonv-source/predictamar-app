@@ -218,14 +218,16 @@ def asignar_sector(lat, lon, dist):
     dlat = lat - LAT_CHORRILLOS
     dlon = lon - LON_CHORRILLOS
 
-    # Sector costero ampliado a 6km -- captura zona operacional de Christian
-    if dist <= 6.0:
-        return "COSTERO"
+    # Todo dentro de 6km es COSTERO -- radio real de Christian
+    if dist <= RADIO_MAX_KM:
+        # Sub-sectorizacion dentro de los 6km por direccion
+        if dlat < -0.02:
+            return "SUR"      # hacia Morro Solar
+        if dlon < -0.04:
+            return "OESTE"    # mar abierto hacia el oeste
+        return "COSTERO"      # zona principal de Christian
 
-    # Sur: hacia Morro Solar y Lurin
-    if dlat < -0.02:
-        return "SUR"
-
+    # Fuera de 6km -- no deberia llegar aqui pero por seguridad
     # Oeste: aguas abiertas
     if dist > 6.0:
         return "OESTE"
@@ -724,27 +726,17 @@ for la in lats_c:
         if d <= 6.0 and d >= RADIO_ORILLA_KM:
             puntos_flat.append((float(la), float(lo), d))
 
-# Grilla media
+# Grilla media 4-6km -- paso 300m para mejor cobertura
 lats_m = np.arange(LAT_MIN_C, LAT_MAX_C, 0.0027)
 lons_m = np.arange(LON_MIN_C, LON_MAX_C, 0.0027)
 for la in lats_m:
     for lo in lons_m:
         if punto_en_tierra(float(la), float(lo)):
-            continue  # excluir puntos en tierra
+            continue
         d = dist_km(LAT_CHORRILLOS, LON_CHORRILLOS, float(la), float(lo))
-        if d > 6.0 and d <= 10.0:
+        if d > 3.0 and d <= RADIO_MAX_KM:  # RADIO_MAX_KM = 6km
             puntos_flat.append((float(la), float(lo), d))
-
-# Grilla abierta
-lats_a = np.arange(LAT_MIN_C, LAT_MAX_C, 0.0045)
-lons_a = np.arange(LON_MIN_C, LON_MAX_C, 0.0045)
-for la in lats_a:
-    for lo in lons_a:
-        if punto_en_tierra(float(la), float(lo)):
-            continue  # excluir puntos en tierra
-        d = dist_km(LAT_CHORRILLOS, LON_CHORRILLOS, float(la), float(lo))
-        if d > 10.0 and d <= RADIO_MAX_KM:
-            puntos_flat.append((float(la), float(lo), d))
+# Nota: grilla abierta eliminada -- todo dentro de 6km radio de Christian
 
 print(f"  Puntos en grilla: {len(puntos_flat)} (costero + medio + abierto)")
 
@@ -961,7 +953,7 @@ def seleccionar_top5(df_sector, sector_nombre, bonus_trampa_val):
     # Punto 1: nucleo del frente
     p1 = df_ord.iloc[0].copy()
     p1['rol'] = "NUCLEO_FRENTE"
-    p1['rank_sector'] = 1
+    p1['rank_sector'] = 'R1'
     seleccionados.append(p1)
 
     # Puntos 2 y 3: variantes con minimo 500m de separacion
@@ -974,7 +966,7 @@ def seleccionar_top5(df_sector, sector_nombre, bonus_trampa_val):
         if min(dists_a_usados) >= SEP_VARIANTES_KM:  # 1km -- distancia entre companeros artesanales
             r = row.copy()
             r['rol'] = f"VARIANTE_{rank-1}"
-            r['rank_sector'] = rank
+            r['rank_sector'] = f'R{rank}'
             seleccionados.append(r)
             usados.append((float(row['lat']), float(row['lon'])))
             rank += 1
@@ -995,7 +987,7 @@ def seleccionar_top5(df_sector, sector_nombre, bonus_trampa_val):
         if min(dists_a_usados) >= SEP_TRAMPAS_KM:  # 1km para trampas
             r = row.copy()
             r['rol'] = f"TRAMPA_{rank_t-3}"
-            r['rank_sector'] = rank_t
+            r['rank_sector'] = f'R{rank_t}'
             seleccionados.append(r)
             usados.append((float(row['lat']), float(row['lon'])))
             rank_t += 1
@@ -1120,7 +1112,7 @@ for _, zona in df_rep.iterrows():
         'dist_km': float(zona['dist_km']),
         'sector': zona['sector'],
         'rol': zona['rol'],
-        'rank_sector': int(zona['rank_sector']),
+        'rank_sector': str(zona['rank_sector']),
         'score_abs': float(zona['score_abs']),
         'score_local': round(float(zona['score_local']), 4),
         'semaforo_local': zona['semaforo_local'],
