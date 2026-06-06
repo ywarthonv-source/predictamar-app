@@ -242,8 +242,10 @@ for sector in orden:
             if isinstance(val, (int, float)):
                 return int(val)
             s = str(val).strip()
-            # Google Sheets convierte 1,2,3,4,5 a fechas 1900-01-01, 1900-01-02 etc
-            # 1899-12-31 = 0, 1900-01-01 = 1, 1900-01-02 = 2, etc
+            # Nuevo formato: R1, R2, R3, R4, R5
+            if s.startswith('R') and s[1:].isdigit():
+                return int(s[1:])
+            # Formato antiguo Google Sheets fecha
             if "1899-12-31" in s: return 1
             if "1900-01-01" in s: return 1
             if "1900-01-02" in s: return 2
