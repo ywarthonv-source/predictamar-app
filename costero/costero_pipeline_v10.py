@@ -1164,7 +1164,12 @@ print(f"MUR SST 1km: {'OK grad=' + str(round(sst_grad_mur,3)) if MUR_DISPONIBLE 
 print(f"Termoclina:  {'OK grad_vert=' + str(grad_vertical) + 'C' if TERMOCLINA_DISPONIBLE else 'NO'}")
 print(f"S1 SAR:      {'OK Fc=' + str(round(Fc_s1,2)) if S1_DISPONIBLE else 'NO'}")
 print(f"ALOS-2:      {'OK Fc=' + str(round(Fc_alos2,2)) if ALOS2_DISPONIBLE else 'NO'}")
-print(f"Oleaje:      {'ADVERSO SWH=' + str(round(swh_medio,2)) if kill_switch_activo else 'OK SWH=' + str(round(swh_medio,2)) + 'm'}")
+if not OLEAJE_DISPONIBLE:
+    print(f"Oleaje:      SIN DATO -- usando valor por defecto SWH={round(swh_medio,2)}m (no confiar en este numero)")
+elif kill_switch_activo:
+    print(f"Oleaje:      ADVERSO SWH={round(swh_medio,2)}m")
+else:
+    print(f"Oleaje:      OK SWH={round(swh_medio,2)}m")
 print(f"Bonus trampa: +{bonus_trampa:.3f}")
 print(f"Sectores: {df_rep['sector'].value_counts().to_dict()}")
 print(f"Total zonas: {len(df_rep)}")
