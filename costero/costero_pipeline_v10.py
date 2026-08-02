@@ -12,6 +12,10 @@
 #   - Total: hasta 20 puntos distribuidos en 4 sectores
 #   - Score correcto: contribuciones aditivas acotadas [0,1]
 #   - Adveccion corregida: coordenadas reales T8h y T16h
+#
+# CORRECCION 2026-08 -- validado contra 126 estaciones IMARPE (crucero 2602-04):
+#   - grad_vertical corre sesgado -0.89C en promedio (std 1.58C) frente al dato real
+#   - tramos de bonus_termoclina duplicados (eran de 1C, ahora 2C) para el mismo motivo
 # ================================================================
 
 import sys, os, json
@@ -404,6 +408,7 @@ sys.stdout.flush()
 print("\n[4b] Temperatura subsuperficial 10m -- proxy termoclina...")
 TERMOCLINA_DISPONIBLE = False
 grad_vertical         = 0.0  # SST - T10m
+grad_vertical_corregido = 0.0  # SST - T10m, corregido por sesgo (validacion IMARPE 2026-08)
 
 try:
     tss_path = f"{DRIVE_BASE}/raw/temp_sub.nc"
@@ -429,7 +434,6 @@ try:
     tss_raw = ds_tss['thetao'].values
     tss_C   = tss_raw - 273.15 if tss_raw.max() > 100 else tss_raw
     tss_mean = float(np.nanmean(tss_C))
-   tss_mean = float(np.nanmean(tss_C))
     if sst_temp_medio is not None and not np.isnan(tss_mean):
         grad_vertical = round(float(sst_temp_medio - tss_mean), 3)
         # CORRECCION 2026-08 -- validado contra 126 estaciones IMARPE (crucero 2602-04):
