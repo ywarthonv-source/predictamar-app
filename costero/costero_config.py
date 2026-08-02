@@ -90,7 +90,7 @@ GEE_S2        = "COPERNICUS/S2_SR_HARMONIZED"
 GEE_ALOS2     = "JAXA/ALOS/PALSAR-2/Level2_2/ScanSAR"
 GEE_GEBCO     = "NOAA/NGDC/ETOPO1"
 GEE_GEBCO_BAND = "bedrock"
-GEE_WAVES     = "COPERNICUS_MARINE_WAV_ANFC_0_083DEG_PT3H"
+GEE_WAVES = "COPERNICUS/MARINE/WAV/ANFC_0_083DEG_PT3H"
 
 # -- Separacion minima entre puntos (distancia entre compaeros artesanales en Chorrillos)
 SEP_VARIANTES_KM  = 1.0   # 1km -- distancia que mantienen compaeros entre embarcaciones
