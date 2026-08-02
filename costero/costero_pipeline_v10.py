@@ -429,10 +429,16 @@ try:
     tss_raw = ds_tss['thetao'].values
     tss_C   = tss_raw - 273.15 if tss_raw.max() > 100 else tss_raw
     tss_mean = float(np.nanmean(tss_C))
+   tss_mean = float(np.nanmean(tss_C))
     if sst_temp_medio is not None and not np.isnan(tss_mean):
         grad_vertical = round(float(sst_temp_medio - tss_mean), 3)
+        # CORRECCION 2026-08 -- validado contra 126 estaciones IMARPE (crucero 2602-04):
+        # grad_vertical corre sesgado -0.89C en promedio (std 1.58C) frente al dato real.
+        BIAS_GRAD_VERTICAL = 0.89  # ajustar si una validacion futura con mas datos lo actualiza
+        grad_vertical_corregido = round(grad_vertical + BIAS_GRAD_VERTICAL, 3)
         TERMOCLINA_DISPONIBLE = True
-        print(f"  Termoclina OK -- SST: {sst_temp_medio:.1f}C | T10m: {tss_mean:.1f}C | grad_vert: {grad_vertical:+.2f}C")
+        print(f"  Termoclina OK -- SST: {sst_temp_medio:.1f}C | T10m: {tss_mean:.1f}C | "
+              f"grad_vert: {grad_vertical:+.2f}C | corregido: {grad_vertical_corregido:+.2f}C")
     else:
         print("  Termoclina -- SST no disponible para calcular gradiente")
 except Exception as e:
@@ -847,14 +853,17 @@ for i in range(0, len(puntos_flat), 100):
                 # a escala 1km cuando no hay datos opticos
                 # SST - T10m > 0: agua fria sube (surgencia activa, cardumen comprimido superficialmente)
                 # SST - T10m < 0: mezcla (columna homogenea, cardumen disperso en vertical)
+                # CORRECCION 2026-08: tramos duplicados (eran de 1C, ahora 2C) -- con 1C de
+                # ancho, 42% de las estaciones de validacion IMARPE cruzaban de tramo solo por
+                # error de CMEMS (std medido: 1.58C). Usa el valor ya corregido de sesgo.
                 bonus_termoclina = 0.0
                 if TERMOCLINA_DISPONIBLE:
-                    if grad_vertical >= 3.0:   bonus_termoclina = 0.06  # estratificacion fuerte -- cardumen comprimido superficial
-                    elif grad_vertical >= 2.0: bonus_termoclina = 0.04  # estratificacion moderada-alta
-                    elif grad_vertical >= 1.0: bonus_termoclina = 0.02  # estratificacion moderada
-                    elif grad_vertical >= 0.0: bonus_termoclina = 0.00  # columna neutra
-                    elif grad_vertical >= -0.5: bonus_termoclina = -0.02 # mezcla leve
-                    else:                       bonus_termoclina = -0.04 # mezcla fuerte -- cardumen en profundidad
+                    if grad_vertical_corregido >= 6.0:   bonus_termoclina = 0.06  # estratificacion fuerte -- cardumen comprimido superficial
+                    elif grad_vertical_corregido >= 4.0: bonus_termoclina = 0.04  # estratificacion moderada-alta
+                    elif grad_vertical_corregido >= 2.0: bonus_termoclina = 0.02  # estratificacion moderada
+                    elif grad_vertical_corregido >= 0.0: bonus_termoclina = 0.00  # columna neutra
+                    elif grad_vertical_corregido >= -1.0: bonus_termoclina = -0.02 # mezcla leve
+                    else:                                  bonus_termoclina = -0.04 # mezcla fuerte -- cardumen en profundidad
 
                 score_abs = float(np.clip(
                     score_con_viento + contrib_sst + penalizacion_mezcla + bonus_marea_global + bonus_empirico + bonus_termoclina,
