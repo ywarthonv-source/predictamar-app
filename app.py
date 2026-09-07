@@ -691,7 +691,7 @@ if buscar:
             for r in razones:
                 st.markdown("• " + r)
         buf_roja = generar_tarjeta_roja_bytes(especie, modo, razones)
-        st.image(buf_roja, use_column_width=True)
+        st.image(buf_roja, width="stretch")
         buf_roja.seek(0)
         st.download_button(
             label="⬇️ Descargar tarjeta zona roja",
@@ -781,7 +781,7 @@ if buscar:
                 st.warning(row["alert"])
             buf = generar_imagen_bytes(i, row, especie, modo,
                                        fase_emoji, fase_nombre, zona_surgencia)
-            st.image(buf, use_column_width=True)
+            st.image(buf, width="stretch")
             buf.seek(0)
             st.download_button(
                 label="⬇️ Descargar tarjeta punto " + str(i+1),
